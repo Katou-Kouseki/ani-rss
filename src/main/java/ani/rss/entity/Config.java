@@ -1,5 +1,6 @@
 package ani.rss.entity;
 
+import ani.rss.enums.MessageEnum;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
@@ -220,6 +221,11 @@ public class Config implements Serializable {
     private String telegramApiHost;
 
     /**
+     * telegram 发送图片
+     */
+    private Boolean telegramImage;
+
+    /**
      * webHookMethod
      */
     private String webHookMethod;
@@ -283,5 +289,30 @@ public class Config implements Serializable {
      * 按星期展示
      */
     private Boolean weekShow;
+
+    /**
+     * 只下载最新集
+     */
+    private Boolean downloadNew;
+
+    /**
+     * 仅允许内网ip访问
+     */
+    private Boolean innerIP;
+
+    /**
+     * 重命名模版
+     */
+    private String renameTemplate;
+
+    /**
+     * 通知类型
+     */
+    private List<MessageEnum> messageList;
+
+    /**
+     * 校验登录IP
+     */
+    private Boolean verifyLoginIp;
 
 }

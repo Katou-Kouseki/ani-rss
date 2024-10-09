@@ -21,6 +21,8 @@ public class Ani implements Serializable {
      */
     private String url;
 
+    private Boolean exists;
+
     /**
      * 备用rss
      *
@@ -69,9 +71,14 @@ public class Ani implements Serializable {
     private Integer season;
 
     /**
-     * 封面
+     * 封面本地保存位置
      */
     private String cover;
+
+    /**
+     * 图片 https://
+     */
+    private String image;
 
     /**
      * 字幕组
@@ -122,8 +129,6 @@ public class Ani implements Serializable {
 
     private String type;
 
-    private String bangumiId;
-
     private String bgmUrl;
 
     /**
@@ -161,6 +166,11 @@ public class Ani implements Serializable {
      */
     private Boolean omit;
 
+    /**
+     * 只下载最新集
+     */
+    private Boolean downloadNew;
+
     public static Ani bulidAni() {
         Ani newAni = new Ani();
         return newAni
@@ -181,13 +191,14 @@ public class Ani implements Serializable {
                 .setCurrentEpisodeNumber(0)
                 .setTotalEpisodeNumber(0)
                 .setMatch(List.of())
-                .setExclude(List.of("720", "\\d{1,2}-\\d{1,2}", "合集"))
+                .setExclude(List.of("720", "\\d{1,2}-\\d{1,2}", "合集", "特别篇"))
                 .setBgmUrl("")
                 .setSubgroup("")
                 .setCustomEpisode(false)
                 .setCustomEpisodeStr("\\d{1,2}(\\.5)?")
                 .setCustomEpisodeGroupIndex(0)
-                .setOmit(true);
+                .setOmit(true)
+                .setDownloadNew(false);
     }
 
     @Data

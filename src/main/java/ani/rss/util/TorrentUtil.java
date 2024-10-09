@@ -1,7 +1,12 @@
 package ani.rss.util;
 
 import ani.rss.download.BaseDownload;
-import ani.rss.entity.*;
+import ani.rss.entity.Ani;
+import ani.rss.entity.Config;
+import ani.rss.entity.Item;
+import ani.rss.entity.TorrentsInfo;
+import ani.rss.enums.MessageEnum;
+import ani.rss.enums.StringEnum;
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.text.StrFormatter;
 import cn.hutool.core.thread.ThreadUtil;
@@ -16,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -40,10 +46,10 @@ public class TorrentUtil {
         Config config = ConfigUtil.CONFIG;
         Boolean autoDisabled = config.getAutoDisabled();
         Integer downloadCount = config.getDownloadCount();
-        Boolean backRss = config.getBackRss();
 
         String title = ani.getTitle();
         Integer season = ani.getSeason();
+        Boolean downloadNew = ani.getDownloadNew();
 
         List<TorrentsInfo> torrentsInfos = getTorrentsInfos();
 
@@ -61,9 +67,14 @@ public class TorrentUtil {
 
         int currentDownloadCount = 0;
         List<Item> items = AniUtil.getItems(ani);
+
         ItemsUtil.omit(ani, items);
         log.debug("{} 共 {} 个", title, items.size());
 
+        if (downloadNew && !items.isEmpty()) {
+            log.debug("{} 已开启只下载最新集", title);
+            items = List.of(items.get(items.size() - 1));
+        }
 
         long count = getTorrentsInfos()
                 .stream()
@@ -81,7 +92,7 @@ public class TorrentUtil {
             // 已经下载过
             if (hashList.contains(hash) || downloadNameList.contains(reName)) {
                 log.debug("已有下载任务 {}", reName);
-                if (master) {
+                if (master && !reName.endsWith(".5")) {
                     currentDownloadCount++;
                 }
                 continue;
@@ -90,7 +101,7 @@ public class TorrentUtil {
             // 已经下载过
             if (torrent.exists()) {
                 log.debug("种子记录已存在 {}", reName);
-                if (master) {
+                if (master && !reName.endsWith(".5")) {
                     currentDownloadCount++;
                 }
                 continue;
@@ -99,7 +110,7 @@ public class TorrentUtil {
             // 未开启rename不进行检测
             if (itemDownloaded(ani, item, true)) {
                 log.debug("本地文件已存在 {}", reName);
-                if (master) {
+                if (master && !reName.endsWith(".5")) {
                     currentDownloadCount++;
                 }
                 continue;
@@ -117,53 +128,13 @@ public class TorrentUtil {
             File saveTorrent = saveTorrent(ani, item);
             List<File> downloadPathList = getDownloadPath(ani);
 
-            // 开启备用rss会自动删除本地已存在视频
-            if (backRss &&
-                    ReUtil.contains("S\\d+E\\d+(\\.5)?$", reName)) {
-                for (File downloadPath : downloadPathList) {
-                    if (!downloadPath.exists()) {
-                        continue;
-                    }
-                    if (!downloadPath.isDirectory()) {
-                        continue;
-                    }
-                    for (File file : ObjectUtil.defaultIfNull(downloadPath.listFiles(), new File[]{})) {
-                        // 文件名不匹配，跳过
-                        if (!FileUtil.mainName(file).equals(reName)) {
-                            continue;
-                        }
-                        boolean isDel = false;
-                        // 文件在删除前先判断其格式
-                        if (file.isFile()) {
-                            String extName = FileUtil.extName(file);
-                            // 没有后缀 跳过
-                            if (StrUtil.isBlank(extName)) {
-                                continue;
-                            }
-                            for (String en : BaseDownload.videoFormat) {
-                                // 后缀匹配不上 跳过
-                                if (!extName.equalsIgnoreCase(en)) {
-                                    continue;
-                                }
-                                isDel = true;
-                                break;
-                            }
-                        }
-                        if (file.isDirectory()) {
-                            isDel = true;
-                        }
-                        if (isDel) {
-                            FileUtil.del(file);
-                            log.info("已开启备用RSS, 自动删除 {}", file.getAbsolutePath());
-                        }
-                    }
-                }
-            }
+            deleteBackRss(ani, item);
+
             String savePath = downloadPathList
                     .get(0)
                     .toString();
             download(ani, item, savePath, saveTorrent);
-            if (master) {
+            if (master && !reName.endsWith(".5")) {
                 currentDownloadCount++;
             }
             count++;
@@ -189,6 +160,76 @@ public class TorrentUtil {
         }
     }
 
+    /**
+     * 删除备用rss
+     *
+     * @param ani
+     * @param item
+     */
+    public static void deleteBackRss(Ani ani, Item item) {
+        Config config = ConfigUtil.CONFIG;
+        Boolean backRss = config.getBackRss();
+        Boolean delete = config.getDelete();
+        String reName = item.getReName();
+
+        if (!delete) {
+            return;
+        }
+
+        if (!backRss) {
+            return;
+        }
+        if (!ReUtil.contains(StringEnum.SEASON_REG, reName)) {
+            return;
+        }
+        reName = ReUtil.get(StringEnum.SEASON_REG, reName, 0);
+
+        List<File> downloadPathList = getDownloadPath(ani);
+
+        List<File> files = downloadPathList.stream()
+                .filter(File::exists)
+                .filter(File::isDirectory)
+                .flatMap(downloadPath -> Stream.of(ObjectUtil.defaultIfNull(downloadPath.listFiles(), new File[]{})))
+                .collect(Collectors.toList());
+        for (File file : files) {
+            String fileMainName = FileUtil.mainName(file);
+            if (StrUtil.isBlank(fileMainName)) {
+                continue;
+            }
+            if (!ReUtil.contains(StringEnum.SEASON_REG, fileMainName)) {
+                continue;
+            }
+            fileMainName = ReUtil.get(StringEnum.SEASON_REG, fileMainName, 0);
+            if (!fileMainName.equals(reName)) {
+                continue;
+            }
+            boolean isDel = false;
+            // 文件在删除前先判断其格式
+            if (file.isFile()) {
+                String extName = FileUtil.extName(file);
+                // 没有后缀 跳过
+                if (StrUtil.isBlank(extName)) {
+                    continue;
+                }
+                for (String en : BaseDownload.videoFormat) {
+                    // 后缀匹配不上 跳过
+                    if (!extName.equalsIgnoreCase(en)) {
+                        continue;
+                    }
+                    isDel = true;
+                    break;
+                }
+            }
+            if (file.isDirectory()) {
+                isDel = true;
+            }
+            if (isDel) {
+                FileUtil.del(file);
+                log.info("已开启备用RSS, 自动删除 {}", file.getAbsolutePath());
+            }
+        }
+    }
+
     public static File getTorrentDir(Ani ani) {
         String title = ani.getTitle();
         Boolean ova = ani.getOva();
@@ -196,9 +237,23 @@ public class TorrentUtil {
 
         File configDir = ConfigUtil.getConfigDir();
 
+        String pinyin = PinyinUtil.getPinyin(title);
+        String s = pinyin.toUpperCase().substring(0, 1);
+        if (ReUtil.isMatch("^\\d$", s)) {
+            s = "0";
+        } else if (!ReUtil.isMatch("^[a-zA-Z]$", s)) {
+            s = "#";
+        }
+
         File torrents = new File(StrFormatter.format("{}/torrents/{}/Season {}", configDir, title, season));
+        if (!torrents.exists()) {
+            torrents = new File(StrFormatter.format("{}/torrents/{}/{}/Season {}", configDir, s, title, season));
+        }
         if (ova) {
             torrents = new File(StrFormatter.format("{}/torrents/{}", configDir, title));
+            if (!torrents.exists()) {
+                torrents = new File(StrFormatter.format("{}/torrents/{}/{}", configDir, s, title));
+            }
         }
         FileUtil.mkdir(torrents);
         return torrents;
@@ -209,9 +264,9 @@ public class TorrentUtil {
         File torrents = getTorrentDir(ani);
         String type = ani.getType();
         if ("dmhy".equals(type)) {
-            return new File(torrents + File.separator + infoHash + ".txt");
+            return new File(torrents + "/" + infoHash + ".txt");
         }
-        return new File(torrents + File.separator + infoHash + ".torrent");
+        return new File(torrents + "/" + infoHash + ".torrent");
     }
 
     /**
@@ -323,14 +378,13 @@ public class TorrentUtil {
                         return false;
                     }
                     mainName = mainName.trim().toUpperCase();
-                    String s = "S(\\d+)E(\\d+(\\.5)?)";
-                    if (!ReUtil.contains(s, mainName)) {
+                    if (!ReUtil.contains(StringEnum.SEASON_REG, mainName)) {
                         return false;
                     }
 
-                    String seasonStr = ReUtil.get(s, mainName, 1);
+                    String seasonStr = ReUtil.get(StringEnum.SEASON_REG, mainName, 1);
 
-                    String episodeStr = ReUtil.get(s, mainName, 2);
+                    String episodeStr = ReUtil.get(StringEnum.SEASON_REG, mainName, 2);
 
                     if (StrUtil.isBlank(seasonStr) || StrUtil.isBlank(episodeStr)) {
                         return false;
@@ -479,7 +533,10 @@ public class TorrentUtil {
 
         if (!torrentFile.exists()) {
             log.error("种子下载出现问题 {} {}", name, torrentFile.getAbsolutePath());
-            MessageUtil.send(ConfigUtil.CONFIG, ani, StrFormatter.format("种子下载出现问题 {} {}", name, torrentFile.getAbsolutePath()));
+            MessageUtil.send(ConfigUtil.CONFIG, ani,
+                    StrFormatter.format("种子下载出现问题 {} {}", name, torrentFile.getAbsolutePath()),
+                    MessageEnum.ERROR
+            );
             return;
         }
         ThreadUtil.sleep(1000);
@@ -490,10 +547,10 @@ public class TorrentUtil {
         if (backRss && !ani.getBackRssList().isEmpty()) {
             text = StrFormatter.format("({}) {}", master ? "主RSS" : "备用RSS", text);
         }
-        MessageUtil.send(ConfigUtil.CONFIG, ani, text);
+        MessageUtil.send(ConfigUtil.CONFIG, ani, text, MessageEnum.DOWNLOAD_START);
 
         try {
-            if (baseDownload.download(name, savePath, torrentFile, ova)) {
+            if (baseDownload.download(item, savePath, torrentFile, ova)) {
                 return;
             }
         } catch (Exception e) {
@@ -501,7 +558,9 @@ public class TorrentUtil {
             log.error(message, e);
         }
         log.error("{} 添加失败，疑似为坏种", name);
-        MessageUtil.send(ConfigUtil.CONFIG, ani, StrFormatter.format("{} 添加失败，疑似为坏种", name));
+        MessageUtil.send(ConfigUtil.CONFIG, ani,
+                StrFormatter.format("{} 添加失败，疑似为坏种", name),
+                MessageEnum.ERROR);
     }
 
     /**
@@ -525,9 +584,17 @@ public class TorrentUtil {
 
         TorrentsInfo.State state = torrentsInfo.getState();
         String name = torrentsInfo.getName();
-        if (!EnumUtil.equalsIgnoreCase(state, TorrentsInfo.State.pausedUP.name())) {
+
+        if (Objects.isNull(state)) {
             return;
         }
+        if (!List.of(
+                TorrentsInfo.State.pausedUP.name(),
+                TorrentsInfo.State.stoppedUP.name()
+        ).contains(state.name())) {
+            return;
+        }
+
         if (delete) {
             log.info("删除已完成任务 {}", name);
             ThreadUtil.sleep(1000);
@@ -547,6 +614,18 @@ public class TorrentUtil {
             ThreadUtil.sleep(1000);
             baseDownload.rename(torrentsInfo);
         }
+    }
+
+    public static Boolean addTags(TorrentsInfo torrentsInfo, String tags) {
+        if (StrUtil.isBlank(tags)) {
+            return false;
+        }
+        try {
+            return baseDownload.addTags(torrentsInfo, tags);
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+        }
+        return false;
     }
 
     public static synchronized void load() {

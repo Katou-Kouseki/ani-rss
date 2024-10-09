@@ -34,4 +34,14 @@ public class BigInfo {
      * 时间
      */
     private LocalDateTime date;
+
+    /**
+     * 图片
+     */
+    private String image;
+
+    /**
+     * 季度
+     */
+    private Integer season;
 }

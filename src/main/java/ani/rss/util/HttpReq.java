@@ -1,10 +1,14 @@
 package ani.rss.util;
 
 import ani.rss.entity.Config;
+import cn.hutool.core.text.StrFormatter;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.http.HttpRequest;
+import cn.hutool.http.HttpUtil;
 import lombok.extern.slf4j.Slf4j;
 
+import java.net.Authenticator;
+import java.net.PasswordAuthentication;
 import java.util.Objects;
 
 @Slf4j
@@ -74,8 +78,18 @@ public class HttpReq {
      * @return
      */
     public static HttpRequest setProxy(HttpRequest req) {
+        return setProxy(req, ConfigUtil.CONFIG);
+    }
+
+    /**
+     * 设置代理
+     *
+     * @param req
+     * @param config
+     * @return
+     */
+    public static HttpRequest setProxy(HttpRequest req, Config config) {
         String url = req.getUrl();
-        Config config = ConfigUtil.CONFIG;
         Boolean proxy = config.getProxy();
         if (!proxy) {
             log.debug("代理未开启 {}", url);
@@ -92,15 +106,22 @@ public class HttpReq {
         String proxyPassword = config.getProxyPassword();
         try {
             req.setHttpProxy(proxyHost, proxyPort);
-            if (StrUtil.isAllNotBlank(proxyUsername, proxyPassword)) {
-                req.basicProxyAuth(proxyUsername, proxyPassword);
-            }
+            Authenticator.setDefault(
+                    new Authenticator() {
+                        @Override
+                        public PasswordAuthentication getPasswordAuthentication() {
+                            if (StrUtil.isAllNotBlank(proxyUsername, proxyPassword)) {
+                                return new PasswordAuthentication(proxyUsername, proxyPassword.toCharArray());
+                            }
+                            return null;
+                        }
+                    }
+            );
             log.debug("使用代理 {}", url);
         } catch (Exception e) {
             log.error("设置代理出现问题 {}", url);
             log.error(e.getMessage(), e);
         }
-
         return req;
     }
 }

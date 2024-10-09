@@ -3,6 +3,7 @@ package ani.rss.util;
 import ani.rss.entity.Config;
 import ani.rss.entity.Login;
 import ani.rss.entity.MyMailAccount;
+import ani.rss.enums.MessageEnum;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.bean.copier.CopyOptions;
 import cn.hutool.core.io.FileUtil;
@@ -14,6 +15,7 @@ import com.google.gson.GsonBuilder;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -67,14 +69,18 @@ public class ConfigUtil {
                                 .setPass("")
                                 .setSslEnable(false)
                 )
-                .setLogin(new Login().setUsername("admin").setPassword(password))
-                .setExclude(List.of("720", "\\d{1,2}-\\d{1,2}", "合集"))
+                .setLogin(new Login()
+                        .setUsername("admin")
+                        .setPassword(password)
+                )
+                .setExclude(List.of("720", "\\d{1,2}-\\d{1,2}", "合集", "特别篇"))
                 .setImportExclude(false)
                 .setEnabledExclude(false)
                 .setTelegram(false)
                 .setTelegramChatId("")
                 .setTelegramBotToken("")
                 .setTelegramApiHost("https://api.telegram.org")
+                .setTelegramImage(true)
                 .setWebHook(false)
                 .setTmdb(false)
                 .setIpWhitelist(false)
@@ -88,7 +94,16 @@ public class ConfigUtil {
                 .setBgmToken("")
                 .setApiKey("")
                 .setWeekShow(true)
-                .setScoreShow(false);
+                .setScoreShow(false)
+                .setDownloadNew(false)
+                .setInnerIP(false)
+                .setRenameTemplate("${title} S${seasonFormat}E${episodeFormat}")
+                .setMessageList(List.of(
+                        MessageEnum.DOWNLOAD_START,
+                        MessageEnum.OMIT,
+                        MessageEnum.ERROR
+                ))
+                .setVerifyLoginIp(true);
     }
 
     private static final Gson GSON = new GsonBuilder()

@@ -1,6 +1,9 @@
 package ani.rss.util;
 
-import ani.rss.entity.*;
+import ani.rss.entity.Ani;
+import ani.rss.entity.BigInfo;
+import ani.rss.entity.Config;
+import ani.rss.entity.Item;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.bean.copier.CopyOptions;
 import cn.hutool.core.collection.CollUtil;
@@ -10,6 +13,7 @@ import cn.hutool.core.lang.Assert;
 import cn.hutool.core.text.StrFormatter;
 import cn.hutool.core.thread.ThreadUtil;
 import cn.hutool.core.util.*;
+import cn.hutool.crypto.digest.MD5;
 import cn.hutool.http.HttpResponse;
 import cn.hutool.http.HttpUtil;
 import cn.hutool.json.JSONUtil;
@@ -29,6 +33,8 @@ import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -38,7 +44,7 @@ public class AniUtil {
             .disableHtmlEscaping()
             .create();
 
-    public static final List<Ani> ANI_LIST = new Vector<>();
+    public static final List<Ani> ANI_LIST = new CopyOnWriteArrayList<>();
 
     /**
      * 获取订阅配置文件
@@ -74,17 +80,6 @@ public class AniUtil {
 
         // 处理旧数据
         for (Ani ani : ANI_LIST) {
-            try {
-                String cover = ani.getCover();
-                if (ReUtil.contains("http(s*)://", cover)) {
-                    cover = AniUtil.saveJpg(cover);
-                    ani.setCover(cover);
-                }
-            } catch (Exception e) {
-                String message = ExceptionUtil.getMessage(e);
-                log.error(message);
-                log.debug(message, e);
-            }
             // 备用rss数据结构改变
             List<Ani.BackRss> backRssList = ani.getBackRssList();
             List<String> backRss = ani.getBackRss();
@@ -128,7 +123,7 @@ public class AniUtil {
      * @return
      */
     public static Ani getAni(String url) {
-        return getAni(url, "", "");
+        return getAni(url, "", "", "");
     }
 
     /**
@@ -137,46 +132,23 @@ public class AniUtil {
      * @param url
      * @return
      */
-    public static Ani getAni(String url, String text, String type) {
+    public static Ani getAni(String url, String text, String type, String bgmUrl) {
         type = StrUtil.blankToDefault(type, "mikan");
         int season = 1;
         String title = "无";
 
         Map<String, String> decodeParamMap = HttpUtil.decodeParamMap(url, StandardCharsets.UTF_8);
 
-        String bangumiId = "", subgroupid = "";
+        String subgroupid = "";
         for (String k : decodeParamMap.keySet()) {
             String v = decodeParamMap.get(k);
-            if (k.equalsIgnoreCase("bangumiId")) {
-                bangumiId = v;
-            }
             if (k.equalsIgnoreCase("subgroupid")) {
                 subgroupid = v;
             }
         }
 
-        String s = HttpReq.get(url, true)
-                .thenFunction(HttpResponse::body);
-        Document document = XmlUtil.readXML(s);
-        Node channel = document.getElementsByTagName("channel").item(0);
-        NodeList childNodes = channel.getChildNodes();
-
-        for (int i = childNodes.getLength() - 1; i >= 0; i--) {
-            Node item = childNodes.item(i);
-            String nodeName = item.getNodeName();
-            if (nodeName.equals("title")) {
-                title = ReUtil.replaceAll(item.getTextContent(), "^Mikan Project - ", "").trim();
-            }
-        }
-
-        String seasonReg = "第(.+)季";
-        if (ReUtil.contains(seasonReg, title)) {
-            season = Convert.chineseToNumber(ReUtil.get(seasonReg, title, 1));
-            title = ReUtil.replaceAll(title, seasonReg, "").trim();
-        }
-        title = title.replace("剧场版", "").trim();
-
         Ani ani = Ani.bulidAni();
+        ani.setUrl(url.trim());
 
         if (List.of("nyaa", "dmhy").contains(type)) {
             if (StrUtil.isNotBlank(text)) {
@@ -184,49 +156,40 @@ public class AniUtil {
             } else {
                 Map<String, String> paramMap = HttpUtil.decodeParamMap(url, StandardCharsets.UTF_8);
                 title = paramMap.get("q");
-                if (StrUtil.isBlank(text)) {
+                if (StrUtil.isBlank(title)) {
                     title = paramMap.get("keyword");
                 }
             }
-            Assert.notBlank(title, "标题获取失败，请手动填写");
+            String subjectId;
+            if (StrUtil.isBlank(bgmUrl)) {
+                Assert.notBlank(title, "标题获取失败，请手动填写");
+                subjectId = BgmUtil.getSubjectId(title);
+            } else {
+                subjectId = BgmUtil.getSubjectId(new Ani().setBgmUrl(bgmUrl));
+            }
 
-            Mikan list = MikanUtil.list(title, new Mikan.Season());
-            List<Mikan.Item> items = list.getItems();
-            List<Ani> anis = new ArrayList<>();
-            if (!items.isEmpty()) {
-                Mikan.Item item = items.get(0);
-                anis = item.getItems();
-            }
-            if (!anis.isEmpty()) {
-                title = anis.get(0).getTitle();
-                String url1 = anis.get(0).getUrl();
-                ani.setBangumiId(new File(url1).getName());
-            }
-            Assert.notBlank(ani.getBangumiId(), "标题获取失败，请手动填写");
+            log.info("subjectId: {}", subjectId);
+            Assert.notBlank(subjectId, "标题获取失败，请手动填写");
+            ani.setBgmUrl("https://bgm.tv/subject/" + subjectId);
         } else {
-            ani.setBangumiId(bangumiId);
+            try {
+                MikanUtil.getMikanInfo(ani, subgroupid);
+            } catch (Exception e) {
+                throw new RuntimeException("获取失败");
+            }
         }
-
-        try {
-            MikanUtil.getMikanInfo(ani, subgroupid);
-        } catch (Exception e) {
-            throw new RuntimeException("获取失败");
-        }
-
-        String themoviedbName = getThemoviedbName(title);
-
-        Config config = ConfigUtil.CONFIG;
-        Boolean titleYear = config.getTitleYear();
-        Boolean tmdb = config.getTmdb();
-        Boolean enabledExclude = config.getEnabledExclude();
-        Boolean importExclude = config.getImportExclude();
-        List<String> exclude = config.getExclude();
 
         try {
             BigInfo bgmInfo = BgmUtil.getBgmInfo(ani);
 
+            season = bgmInfo.getSeason();
+            title = bgmInfo.getNameCn();
+            int eps = bgmInfo.getEps();
             String subjectId = bgmInfo.getSubjectId();
-            int eps = BgmUtil.getEpisodes(subjectId, 0).size();
+            if (eps > 0) {
+                eps = BgmUtil.getEpisodes(subjectId, 0).size();
+            }
+            String image = bgmInfo.getImage();
 
             LocalDateTime date = bgmInfo.getDate();
             ani.setTotalEpisodeNumber(eps)
@@ -234,21 +197,42 @@ public class AniUtil {
                     .setScore(bgmInfo.getScore())
                     .setYear(date.getYear())
                     .setMonth(date.getMonthValue())
-                    .setDate(date.getDayOfMonth());
+                    .setDate(date.getDayOfMonth())
+                    .setImage(image);
         } catch (Exception e) {
             String message = ExceptionUtil.getMessage(e);
             log.error(message, e);
+            throw new RuntimeException("获取bgm信息失败");
         }
+
+        String image = ani.getImage();
+        ani.setCover(saveJpg(image));
+
+        String seasonReg = StrFormatter.format("第({}{1,2})季", ReUtil.RE_CHINESE);
+        if (ReUtil.contains(seasonReg, title)) {
+            season = Convert.chineseToNumber(ReUtil.get(seasonReg, title, 1));
+            title = ReUtil.replaceAll(title, seasonReg, "").trim();
+        }
+        title = title.replace("剧场版", "").trim();
 
         Integer year = ani.getYear();
 
-        if (StrUtil.isNotBlank(themoviedbName) && tmdb) {
-            title = themoviedbName;
-        }
+        Config config = ConfigUtil.CONFIG;
+        Boolean downloadNew = config.getDownloadNew();
+        Boolean titleYear = config.getTitleYear();
+        Boolean tmdb = config.getTmdb();
+        Boolean enabledExclude = config.getEnabledExclude();
+        Boolean importExclude = config.getImportExclude();
+        List<String> exclude = config.getExclude();
 
         if (titleYear && Objects.nonNull(year) && year > 0) {
             title = StrFormatter.format("{} ({})", title, year);
-            themoviedbName = StrFormatter.format("{} ({})", themoviedbName, year);
+        }
+
+        String themoviedbName = getThemoviedbName(title);
+
+        if (StrUtil.isNotBlank(themoviedbName) && tmdb) {
+            title = themoviedbName;
         }
 
         if (importExclude) {
@@ -266,13 +250,12 @@ public class AniUtil {
         title = title.trim();
 
         ani
+                .setDownloadNew(downloadNew)
                 .setGlobalExclude(enabledExclude)
                 .setType(type)
-                .setUrl(url.trim())
                 .setSeason(season)
                 .setTitle(title)
                 .setThemoviedbName(themoviedbName);
-
 
         Boolean ova = ani.getOva();
         if (ova) {
@@ -288,14 +271,17 @@ public class AniUtil {
         ani.setDownloadPath(downloadPath);
 
         log.debug("获取到动漫信息 {}", JSONUtil.formatJsonStr(GSON.toJson(ani)));
-
-        List<Item> items = getItems(ani, s);
-        log.debug("获取到视频 共{}个", items.size());
-        if (items.isEmpty() || ani.getOva()) {
+        if (ani.getOva()) {
             return ani;
         }
         // 自动推断剧集偏移
         if (config.getOffset()) {
+            String s = HttpReq.get(url, true)
+                    .thenFunction(HttpResponse::body);
+            List<Item> items = getItems(ani, s, new Item());
+            if (items.isEmpty()) {
+                return ani;
+            }
             Double offset = -(items.stream()
                     .map(Item::getEpisode)
                     .min(Comparator.comparingDouble(i -> i))
@@ -306,19 +292,34 @@ public class AniUtil {
         return ani;
     }
 
+
     public static String saveJpg(String coverUrl) {
-        File jpgFile = new File(URLUtil.toURI(coverUrl).getPath());
-        String dir = jpgFile.getParentFile().getName();
-        String filename = jpgFile.getName();
-        File configDir = ConfigUtil.getConfigDir();
-        FileUtil.mkdir(configDir + "/files/" + dir);
-        File file = new File(configDir + "/files/" + dir + "/" + filename);
-        if (file.exists()) {
-            return dir + "/" + filename;
+        return saveJpg(coverUrl, false);
+    }
+
+    /**
+     * 保存图片
+     *
+     * @param coverUrl
+     * @param isOverride 是否覆盖
+     * @return
+     */
+    public static String saveJpg(String coverUrl, Boolean isOverride) {
+        if (StrUtil.isBlank(coverUrl)) {
+            return "";
         }
+        String filename = MD5.create().digestHex(coverUrl);
+        filename = filename.charAt(0) + "/" + filename + "." + FileUtil.extName(coverUrl);
+        File configDir = ConfigUtil.getConfigDir();
+        FileUtil.mkdir(configDir + "/files/" + filename.charAt(0));
+        File file = new File(configDir + "/files/" + filename);
+        if (file.exists() && !isOverride) {
+            return filename;
+        }
+        FileUtil.del(file);
         HttpReq.get(coverUrl, true)
                 .then(res -> FileUtil.writeFromStream(res.bodyStream(), file));
-        return dir + "/" + filename;
+        return filename;
     }
 
     /**
@@ -328,15 +329,11 @@ public class AniUtil {
      * @param xml
      * @return
      */
-    public static List<Item> getItems(Ani ani, String xml) {
-        String title = ani.getTitle();
-
+    public static List<Item> getItems(Ani ani, String xml, Item newItem) {
         List<String> exclude = ani.getExclude();
         List<String> match = ani.getMatch();
         Boolean ova = ani.getOva();
 
-        int offset = ani.getOffset();
-        int season = ani.getSeason();
         List<Item> items = new ArrayList<>();
 
         Document document = XmlUtil.readXML(xml);
@@ -416,7 +413,9 @@ public class AniUtil {
                 infoHash = infoHash.toLowerCase();
             }
 
-            Item newItem = new Item()
+            Item addNewItem = ObjectUtil.clone(newItem);
+
+            addNewItem
                     .setEpisode(1.0)
                     .setTitle(itemTitle)
                     .setReName(itemTitle)
@@ -425,17 +424,17 @@ public class AniUtil {
                     .setSize(size);
 
             // 进行过滤
-            if (exclude.stream().anyMatch(s -> ReUtil.contains(s, newItem.getTitle()))) {
+            if (exclude.stream().anyMatch(s -> ReUtil.contains(s, addNewItem.getTitle()))) {
                 continue;
             }
 
             // 全局排除
             if (globalExclude) {
-                if (globalExcludeList.stream().anyMatch(s -> ReUtil.contains(s, newItem.getTitle()))) {
+                if (globalExcludeList.stream().anyMatch(s -> ReUtil.contains(s, addNewItem.getTitle()))) {
                     continue;
                 }
             }
-            items.add(newItem);
+            items.add(addNewItem);
         }
 
         // 匹配规则
@@ -454,66 +453,13 @@ public class AniUtil {
         if (ova) {
             return items;
         }
-
-        String s = "(.*|\\[.*])( -? \\d+(\\.5)?|\\[\\d+(\\.5)?]|\\[\\d+(\\.5)?.?[vV]\\d]|第\\d+(\\.5)?[话話集]|\\[第?\\d+(\\.5)?[话話集]]|\\[\\d+(\\.5)?.?END]|[Ee][Pp]?\\d+(\\.5)?)(.*)";
-
-        Boolean customEpisode = ani.getCustomEpisode();
-        String customEpisodeStr = ani.getCustomEpisodeStr();
-        Integer customEpisodeGroupIndex = ani.getCustomEpisodeGroupIndex();
-
         items = items.stream()
                 .filter(item -> {
                     try {
-                        String itemTitle = item.getTitle();
-                        itemTitle = itemTitle.replace("+NCOPED", "");
-
-                        String e = "";
-                        if (customEpisode) {
-                            e = ReUtil.get(customEpisodeStr, itemTitle, customEpisodeGroupIndex);
-                        } else {
-                            e = ReUtil.get(s, itemTitle, 2);
-                        }
-
-                        if (StrUtil.isBlank(e)) {
-                            return false;
-                        }
-
-                        String episode = ReUtil.get("\\d+(\\.5)?", e, 0);
-                        if (StrUtil.isBlank(episode)) {
-                            return false;
-                        }
-
-                        Boolean skip5 = config.getSkip5();
-                        if (skip5) {
-                            if (episode.endsWith(".5")) {
-                                log.debug("{} 疑似 {} 剧集, 自动跳过", itemTitle, episode + ".5");
-                                return false;
-                            }
-                        }
-
-                        boolean is5 = Double.parseDouble(episode) - 0.5 == Double.valueOf(episode).intValue();
-
-                        if (is5) {
-                            item.setEpisode(Double.parseDouble(episode));
-                        } else {
-                            item.setEpisode(Double.parseDouble(episode) + offset);
-                        }
-
-                        String reName = StrFormatter.format("{} S{}E{}",
-                                title,
-                                String.format("%02d", season),
-                                String.format("%02d", item.getEpisode().intValue()));
-
-                        if (is5) {
-                            reName = reName + ".5";
-                        }
-
-                        item
-                                .setReName(reName);
-                        return true;
+                        return RenameUtil.rename(ani, item);
                     } catch (Exception e) {
                         log.error("解析rss视频集次出现问题");
-                        log.debug(e.getMessage(), e);
+                        log.error(e.getMessage(), e);
                     }
                     return false;
                 }).collect(Collectors.toList());
@@ -533,7 +479,7 @@ public class AniUtil {
 
         String s = HttpReq.get(url, true)
                 .thenFunction(HttpResponse::body);
-        items.addAll(getItems(ani, s)
+        items.addAll(getItems(ani, s, new Item().setSubgroup(ani.getSubgroup()))
                 .stream()
                 .peek(item -> {
                     item.setMaster(true)
@@ -552,7 +498,7 @@ public class AniUtil {
             ThreadUtil.sleep(1000);
             s = HttpReq.get(rss.getUrl(), true)
                     .thenFunction(HttpResponse::body);
-            items.addAll(getItems(ani, s)
+            items.addAll(getItems(ani, s, new Item().setSubgroup(ani.getSubgroup()))
                     .stream()
                     .peek(item -> {
                         item.setMaster(false)
@@ -592,8 +538,21 @@ public class AniUtil {
      * @return
      */
     public static String getThemoviedbName(String name) {
+        if (StrUtil.isBlank(name)) {
+            return "";
+        }
+        AtomicReference<String> year = new AtomicReference<>("");
+        String yearReg = " \\((\\d{4})\\)$";
+        if (ReUtil.contains(yearReg, name)) {
+            year.set(ReUtil.get(yearReg, name, 1));
+            name = name.replaceAll(yearReg, "");
+        }
+        if (StrUtil.isBlank(name)) {
+            return "";
+        }
+        String themoviedbName;
         try {
-            return HttpReq.get("https://www.themoviedb.org/search", true)
+            themoviedbName = HttpReq.get("https://www.themoviedb.org/search", true)
                     .form("query", name)
                     .header("accept-language", "zh-CN")
                     .thenFunction(res -> {
@@ -601,6 +560,14 @@ public class AniUtil {
                         Element element = document.selectFirst(".title h2");
                         if (Objects.isNull(element)) {
                             return "";
+                        }
+                        Element releaseDate = document.selectFirst(".release_date");
+                        if (Objects.nonNull(releaseDate) && StrUtil.isNotBlank(year.get())) {
+                            String s = "(\\d{4}) 年 \\d{2} 月 \\d{2} 日";
+                            String text = releaseDate.text();
+                            if (ReUtil.contains(s, text)) {
+                                year.set(ReUtil.get(s, text, 1));
+                            }
                         }
                         String title = element.ownText();
                         title = title.replace("1/2", "½");
@@ -616,6 +583,22 @@ public class AniUtil {
             log.error(message, e);
             return "";
         }
+        if (StrUtil.isBlank(themoviedbName)) {
+            return "";
+        }
+        if (StrUtil.isNotBlank(year.get())) {
+            themoviedbName = StrFormatter.format("{} ({})", themoviedbName, year);
+        }
+        return themoviedbName;
+    }
+
+    public static String getBangumiId(Ani ani) {
+        String url = ani.getUrl();
+        if (StrUtil.isBlank(url)) {
+            return "";
+        }
+        Map<String, String> decodeParamMap = HttpUtil.decodeParamMap(url, StandardCharsets.UTF_8);
+        return decodeParamMap.get("bangumiId");
     }
 
 }

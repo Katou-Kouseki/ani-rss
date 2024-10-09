@@ -16,6 +16,9 @@
       </el-collapse-item>
       <el-collapse-item title="添加订阅" name="2">
         <el-form label-width="auto">
+          <el-form-item label="只下载最新集">
+            <el-switch v-model:model-value="props.config.downloadNew"/>
+          </el-form-item>
           <el-form-item label="标题添加年份">
             <el-switch v-model:model-value="props.config.titleYear"/>
           </el-form-item>
@@ -52,6 +55,21 @@
             <el-select v-model:model-value="props.config.seasonName" style="width: 150px">
               <el-option :value="it" :key="it" :label="it" v-for="it in ['Season 1','S01','None']"/>
             </el-select>
+          </el-form-item>
+          <el-form-item label="重命名模版">
+            <div style="width: 100%">
+              <el-input v-model:model-value="props.config.renameTemplate"/>
+              <br>
+              <el-text class="mx-1" size="small">
+                ${title} 标题 , ${subgroup} 字幕组 <br>
+                ${seasonFormat} 季 01 ,
+                ${episodeFormat} 集 01 <br>
+                ${season} 季 1 ,
+                ${episode} 集 1
+                <br>
+                如非必要请勿去除或更改 S${seasonFormat}E${episodeFormat}
+              </el-text>
+            </div>
           </el-form-item>
         </el-form>
       </el-collapse-item>
@@ -133,6 +151,9 @@
                 </el-text>
               </div>
             </div>
+          </el-form-item>
+          <el-form-item label="禁止公网访问">
+            <el-switch v-model:model-value="props.config.innerIP"/>
           </el-form-item>
           <el-form-item label="DEBUG">
             <el-switch v-model:model-value="props.config.debug"/>

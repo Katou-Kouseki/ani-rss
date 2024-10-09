@@ -1,7 +1,10 @@
 package ani.rss.download;
 
 import ani.rss.entity.Config;
+import ani.rss.entity.Item;
 import ani.rss.entity.TorrentsInfo;
+import ani.rss.enums.StringEnum;
+import ani.rss.util.ExceptionUtil;
 import ani.rss.util.HttpReq;
 import cn.hutool.core.codec.Base64;
 import cn.hutool.core.collection.CollUtil;
@@ -20,6 +23,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -55,7 +59,9 @@ public class Transmission implements BaseDownload {
         try {
             getTorrentsInfos();
         } catch (Exception e) {
-            log.error("登录 Transmission 失败");
+            String message = ExceptionUtil.getMessage(e);
+            log.error(message, e);
+            log.error("登录 Transmission 失败 {}", message);
             return false;
         }
         return true;
@@ -111,7 +117,10 @@ public class Transmission implements BaseDownload {
     }
 
     @Override
-    public Boolean download(String name, String savePath, File torrentFile, Boolean ova) {
+    public Boolean download(Item item, String savePath, File torrentFile, Boolean ova) {
+        String name = item.getReName();
+        String subgroup = item.getSubgroup();
+        subgroup = StrUtil.blankToDefault(subgroup, "未知字幕组");
         String body = ResourceUtil.readUtf8Str("transmission/torrent-add.json");
         String extName = FileUtil.extName(torrentFile);
         if (StrUtil.isBlank(extName)) {
@@ -120,10 +129,10 @@ public class Transmission implements BaseDownload {
         String torrent = "";
         if ("txt".equals(extName)) {
             torrent = FileUtil.readUtf8String(torrentFile);
-            body = StrFormatter.format(body, tag, savePath, "", torrent);
+            body = StrFormatter.format(body, tag, subgroup, savePath, "", torrent);
         } else {
             torrent = Base64.encode(torrentFile);
-            body = StrFormatter.format(body, tag, savePath, torrent, "");
+            body = StrFormatter.format(body, tag, subgroup, savePath, torrent, "");
         }
 
         String hash = FileUtil.mainName(torrentFile);
@@ -181,7 +190,7 @@ public class Transmission implements BaseDownload {
 
         String mainName = FileUtil.mainName(name);
 
-        if (ReUtil.contains("S\\d+E\\d+(\\.5)?$", mainName)) {
+        if (ReUtil.contains(StringEnum.SEASON_REG, mainName)) {
             return;
         }
 
@@ -210,5 +219,20 @@ public class Transmission implements BaseDownload {
             return;
         }
         log.error("重命名失败 {} ==> {}", name, reName);
+    }
+
+    @Override
+    public Boolean addTags(TorrentsInfo torrentsInfo, String tags) {
+        String id = torrentsInfo.getId();
+        List<String> strings = new ArrayList<>(List.of(torrentsInfo.getTags().split(",")));
+        strings.add(tags);
+
+        String body = ResourceUtil.readUtf8Str("transmission/torrent-set.json");
+        body = StrFormatter.format(body, gson.toJson(strings), id);
+        return HttpReq.post(host + "/transmission/rpc", false)
+                .header(Header.AUTHORIZATION, authorization)
+                .header("X-Transmission-Session-Id", sessionId)
+                .body(body)
+                .thenFunction(HttpResponse::isOk);
     }
 }

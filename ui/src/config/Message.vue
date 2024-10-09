@@ -1,4 +1,19 @@
 <template>
+  <div style="margin-bottom: 12px;">
+    <div>
+      <el-checkbox-group v-model:model-value="config.messageList">
+        <el-checkbox label="开始下载" value="DOWNLOAD_START"/>
+        <el-checkbox label="下载完成" value="DOWNLOAD_END"/>
+        <el-checkbox label="缺集" value="OMIT"/>
+        <el-checkbox label="错误" value="ERROR"/>
+      </el-checkbox-group>
+    </div>
+    <div>
+      <el-text class="mx-1" size="small">
+        下载完成通知暂不支持 Aria2
+      </el-text>
+    </div>
+  </div>
   <el-collapse v-model:model-value="messageActiveName" accordion>
     <el-collapse-item title="Telegram通知" name="1">
       <el-form label-width="auto" @submit="(event)=>{
@@ -22,7 +37,7 @@
               </div>
               <div style="display: flex;margin-top: 4px;align-items: center;">
                 <div>
-                  <el-select v-model:model-value="chatId" @change="chatIdChange" style="width: 150px"
+                  <el-select v-model:model-value="chatId" @change="chatIdChange" style="width: 160px"
                              :disabled="!config.telegram">
                     <el-option v-for="item in Object.keys(chatIdMap)"
                                :key="item"
@@ -37,6 +52,9 @@
               </div>
             </div>
           </div>
+        </el-form-item>
+        <el-form-item label="图片">
+          <el-switch v-model:model-value="props.config.telegramImage" :disabled="!config.telegram"/>
         </el-form-item>
         <el-form-item label="开关">
           <div style="width: 100%;display: flex;justify-content: space-between;">
@@ -117,6 +135,8 @@
         <div style="display: flex;justify-content: end;">
           <el-text class="mx-1" size="small">
             ${message} 会自动替换为信息
+            <br>
+            ${image} 会自动替换为图片链接
           </el-text>
         </div>
       </el-form>

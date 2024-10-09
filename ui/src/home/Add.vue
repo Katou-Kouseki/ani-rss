@@ -1,11 +1,15 @@
 <template>
   <Mikan ref="mikan" @add="args => ani.url = args.url"/>
+  <Bgm ref="bgmRef" @add="it => {
+    ani.title = it['name_cn']
+    ani.bgmUrl = it.url
+  }"/>
   <el-dialog v-model="dialogVisible" title="添加订阅" center v-if="dialogVisible">
     <div v-if="showRss" @keydown.enter="getRss">
       <el-tabs tab-position="left" v-model="activeName">
         <el-tab-pane label="Mikan" name="mikan">
           <el-form label-width="auto"
-                   style="height: 200px"
+                   style="height: 260px"
                    v-if="showRss" @keydown.enter="getRss"
                    @submit="(event)=>{
                 event.preventDefault()
@@ -40,9 +44,21 @@
                 event.preventDefault()
              }">
             <el-form-item label="番剧名称">
+              <div style="display: flex;width: 100%;">
+                <div style="flex: 1">
+                  <el-input
+                      v-model:model-value="ani.title"
+                      placeholder="可以为空 如果获取失败建议补全"
+                  />
+                </div>
+                <div style="width: 4px;"></div>
+                <el-button text bg icon="Search" @click="bgmRef?.show(ani.title)"/>
+              </div>
+            </el-form-item>
+            <el-form-item label="BgmUrl">
               <el-input
-                  v-model:model-value="ani.title"
-                  placeholder="可以为空 如果获取失败建议补全"
+                  v-model:model-value="ani.bgmUrl"
+                  placeholder="https://bgm.tv/subject/123456"
               />
             </el-form-item>
             <el-form-item label="RSS 地址">
@@ -62,9 +78,21 @@
                 event.preventDefault()
              }">
             <el-form-item label="番剧名称">
+              <div style="display: flex;width: 100%;">
+                <div style="flex: 1">
+                  <el-input
+                      v-model:model-value="ani.title"
+                      placeholder="可以为空 如果获取失败建议补全"
+                  />
+                </div>
+                <div style="width: 4px;"></div>
+                <el-button text bg icon="Search" @click="bgmRef?.show(ani.title)"/>
+              </div>
+            </el-form-item>
+            <el-form-item label="BgmUrl">
               <el-input
-                  v-model:model-value="ani.title"
-                  placeholder="可以为空 如果获取失败建议补全"
+                  v-model:model-value="ani.bgmUrl"
+                  placeholder="https://bgm.tv/subject/123456"
               />
             </el-form-item>
             <el-form-item label="RSS 地址">
@@ -100,9 +128,11 @@ import {ElMessage} from "element-plus";
 import api from "../api.js";
 import Mikan from "./Mikan.vue";
 import Ani from "./Ani.vue";
+import Bgm from "./Bgm.vue";
 
 const showRss = ref(true)
 const mikan = ref()
+const bgmRef = ref()
 
 const dialogVisible = ref(false)
 

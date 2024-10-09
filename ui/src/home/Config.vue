@@ -119,7 +119,13 @@ const config = ref({
   'apiKey': '',
   'weekShow': false,
   'scoreShow': false,
-  'backRss': false
+  'backRss': false,
+  'downloadNew': false,
+  'telegramImage': true,
+  'innerIP': false,
+  'renameTemplate': '',
+  'messageList': [],
+  'verifyLoginIp': true
 })
 
 const activeName = ref('download')

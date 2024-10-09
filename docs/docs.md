@@ -28,8 +28,8 @@
 
 不支持下载时重命名会导致:
 
-`在视频文件未重命名时已经有 emby 生成视频缩略图 .nfo 元数据,
-当重命名后还会再次生成一次。且重命名后的视频再次被刮削到时 emby 触发 Webhook 通知。`
+`在视频文件未重命名时已经有 emby 生成视频缩略图 .nfo 元数据, 
+当重命名后还会再次生成一次。且重命名后的视频再次被刮削到时 emby 无法触发 Webhook 通知。`
 
 `个人喜欢使用 Webhook 通知让` [EmbyPinyin](https://github.com/wushuo894/EmbyPinyin) `(我的另一个项目) 处理中文拼音首字母索引`
 
@@ -249,6 +249,8 @@ qbittorrent:
 
     http://[IP]:7789/api/web_hook?s=[ApiKey]
 
+保持emby与ani-rss的映射路径一致可以有更好的效果
+
 ### ip白名单
 
 名单中的ip将不会校验登录
@@ -336,3 +338,5 @@ QQ邮箱 - 常规 - 第三方服务 - IMAP/SMTP服务
 [从零开始的NAS生活 第四回：ANI-RSS，自动追番！](https://www.wtsss.fun/archives/qhaQ3M7v)
 
 [自动化追番计划](http://jinghuashang.cn/posts/8f622332.html)
+
+[ANI-RSS：自动追番新姿势！](https://www.himiku.com/archives/ani-rss.html)

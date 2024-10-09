@@ -1,7 +1,9 @@
 package ani.rss.download;
 
 import ani.rss.entity.Config;
+import ani.rss.entity.Item;
 import ani.rss.entity.TorrentsInfo;
+import ani.rss.enums.StringEnum;
 import ani.rss.util.ExceptionUtil;
 import ani.rss.util.HttpReq;
 import cn.hutool.core.io.FileUtil;
@@ -52,6 +54,7 @@ public class qBittorrent implements BaseDownload {
                     });
         } catch (Exception e) {
             String message = ExceptionUtil.getMessage(e);
+            log.error(message, e);
             log.error("登录 qBittorrent 失败 {}", message);
         }
         return false;
@@ -81,7 +84,10 @@ public class qBittorrent implements BaseDownload {
     }
 
     @Override
-    public Boolean download(String name, String savePath, File torrentFile, Boolean ova) {
+    public Boolean download(Item item, String savePath, File torrentFile, Boolean ova) {
+        String name = item.getReName();
+        String subgroup = item.getSubgroup();
+        subgroup = StrUtil.blankToDefault(subgroup, "未知字幕组");
         String host = config.getHost();
         Boolean qbRenameTitle = config.getQbRenameTitle();
         Boolean qbUseDownloadPath = config.getQbUseDownloadPath();
@@ -99,7 +105,7 @@ public class qBittorrent implements BaseDownload {
                 .form("stopCondition", "None")
                 .form("upLimit", 102400)
                 .form("useDownloadPath", qbUseDownloadPath)
-                .form("tags", "ani-rss");
+                .form("tags", "ani-rss," + subgroup);
 
         String extName = FileUtil.extName(torrentFile);
         if ("txt".equals(extName)) {
@@ -152,7 +158,7 @@ public class qBittorrent implements BaseDownload {
     public void rename(TorrentsInfo torrentsInfo) {
         Boolean qbRenameTitle = config.getQbRenameTitle();
         String reName = torrentsInfo.getName();
-        if (!ReUtil.contains("S\\d+E\\d+(\\.5)?$", reName) && qbRenameTitle) {
+        if (!ReUtil.contains(StringEnum.SEASON_REG, reName) && qbRenameTitle) {
             return;
         }
 
@@ -210,4 +216,16 @@ public class qBittorrent implements BaseDownload {
             renameCache.remove(hash);
         }
     }
+
+    @Override
+    public Boolean addTags(TorrentsInfo torrentsInfo, String tags) {
+        String host = config.getHost();
+        String hash = torrentsInfo.getHash();
+        return HttpReq.post(host + "/api/v2/torrents/addTags", false)
+                .form("hashes", hash)
+                .form("tags", tags)
+                .thenFunction(HttpResponse::isOk);
+    }
+
+
 }

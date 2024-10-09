@@ -53,6 +53,8 @@ public class AniAction implements BaseAction {
             return;
         }
 
+        AniUtil.saveJpg(ani.getImage(), true);
+
         Optional<Ani> first = AniUtil.ANI_LIST.stream()
                 .filter(it -> it.getId().equals(ani.getId()))
                 .findFirst();
@@ -115,11 +117,14 @@ public class AniAction implements BaseAction {
 
         AniUtil.ANI_LIST.add(ani);
         AniUtil.sync();
-        ThreadUtil.execute(() -> {
-            if (TorrentUtil.login()) {
-                TorrentUtil.downloadAni(ani);
-            }
-        });
+        Boolean enable = ani.getEnable();
+        if (enable) {
+            ThreadUtil.execute(() -> {
+                if (TorrentUtil.login()) {
+                    TorrentUtil.downloadAni(ani);
+                }
+            });
+        }
         resultSuccessMsg("添加订阅成功");
         log.info("添加订阅 {} {} {}", ani.getTitle(), ani.getUrl(), ani.getId());
     }
@@ -148,7 +153,12 @@ public class AniAction implements BaseAction {
             resultErrorMsg("修改失败");
             return;
         }
+        File torrentDir = TorrentUtil.getTorrentDir(first.get());
         BeanUtil.copyProperties(ani, first.get());
+        File newTorrentDir = TorrentUtil.getTorrentDir(first.get());
+        if (!torrentDir.toString().equals(newTorrentDir.toString())) {
+            FileUtil.move(torrentDir, newTorrentDir.getParentFile(), true);
+        }
         AniUtil.sync();
         resultSuccessMsg("修改成功");
         log.info("修改订阅 {} {} {}", ani.getTitle(), ani.getUrl(), ani.getId());

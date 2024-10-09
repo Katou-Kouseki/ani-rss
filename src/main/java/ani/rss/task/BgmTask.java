@@ -27,7 +27,7 @@ public class BgmTask extends Thread {
         super.setName("bgm-task-thread");
         log.info("{} 任务正在运行", getName());
         while (loop.get()) {
-            List<Ani> aniList = ObjectUtil.clone(AniUtil.ANI_LIST);
+            List<Ani> aniList = AniUtil.ANI_LIST;
             for (Ani ani : aniList) {
                 Boolean enable = ani.getEnable();
                 Integer totalEpisodeNumber = ani.getTotalEpisodeNumber();
@@ -37,9 +37,10 @@ public class BgmTask extends Thread {
                         double score = bgmInfo.getScore();
                         ani.setScore(score);
 
-                        if (totalEpisodeNumber < 1) {
+                        Integer eps = bgmInfo.getEps();
+                        if (totalEpisodeNumber < 1 && eps > 0) {
                             String subjectId = bgmInfo.getSubjectId();
-                            int eps = BgmUtil.getEpisodes(subjectId, 0).size();
+                            eps = BgmUtil.getEpisodes(subjectId, 0).size();
                             ani.setTotalEpisodeNumber(eps);
                         }
                     } catch (Exception e) {
