@@ -1,7 +1,7 @@
 <template>
-  <el-dialog v-model="dialogVisible" title="设置" center v-if="dialogVisible">
-    <div style="margin: 0 15px;" v-loading="loading">
-      <el-tabs v-model:model-value="activeName">
+  <el-dialog v-model="dialogVisible" center title="设置">
+    <div v-loading="loading">
+      <el-tabs v-model:model-value="activeName" style="margin: 0 15px;">
         <el-tab-pane label="下载设置" name="download" :lazy="true">
           <div style="height: 500px;">
             <el-scrollbar style="padding: 0 12px">
@@ -26,17 +26,21 @@
           <LoginConfig :config="config"/>
         </el-tab-pane>
         <el-tab-pane label="通知" :lazy="true">
-          <div style="margin: 4px;">
-            <Message ref="messageRef" v-model:config="config" v-model:message-active-name="messageActiveName"/>
+          <div style="height: 500px;">
+            <el-scrollbar style="padding: 0 12px">
+              <Message ref="messageRef" v-model:config="config" v-model:message-active-name="messageActiveName"/>
+            </el-scrollbar>
           </div>
           <div style="height: 4px;"></div>
         </el-tab-pane>
         <el-tab-pane label="关于" name="about" :lazy="true">
-          <About/>
+          <About :config="config"/>
         </el-tab-pane>
       </el-tabs>
-      <div style="display: flex;justify-content: end;width: 100%;">
-        <el-button :loading="configButtonLoading" @click="editConfig" text bg icon="Check">确定</el-button>
+      <div style="display: flex;justify-content: end;width: 100%;margin-top: 8px;">
+        <el-button :loading="configButtonLoading" @click="editConfig" text bg icon="Check" type="primary">确定
+        </el-button>
+        <el-button icon="Close" bg text @click="dialogVisible = false">取消</el-button>
       </div>
     </div>
   </el-dialog>
@@ -71,15 +75,19 @@ const config = ref({
   'password': '',
   'sleep': 5,
   'watchErrorTorrent': true,
+  'delayedDownload': 0,
   'downloadPath': '',
   'ovaDownloadPath': '',
   'fileExist': true,
+  'awaitStalledUP': true,
   'delete': false,
+  'deleteBackRSSOnly': false,
   'offset': false,
   'acronym': false,
   'titleYear': false,
   'autoDisabled': false,
   'skip5': true,
+  'logsMax': 2048,
   'debug': false,
   'proxy': false,
   'proxyHost': '',
@@ -97,6 +105,7 @@ const config = ref({
     'pass': '',
     'sslEnable': false
   },
+  'mailImage': true,
   'login': {
     'username': '',
     'password': ''
@@ -119,7 +128,31 @@ const config = ref({
   'apiKey': '',
   'weekShow': false,
   'scoreShow': false,
-  'backRss': false
+  'backRss': false,
+  'downloadNew': false,
+  'telegramImage': true,
+  'telegramFormat': '',
+  'innerIP': false,
+  'renameTemplate': '',
+  'messageList': [],
+  'verifyLoginIp': true,
+  'serverChanSendKey': '',
+  'serverChan3ApiUrl': '',
+  'serverChan': false,
+  'serverChanType': '',
+  'systemMsg': false,
+  'loginEffectiveHours': 3,
+  'trackersUpdateUrls': '',
+  'autoTrackersUpdate': false,
+  'renameMinSize': 100,
+  'tmdbId': false,
+  'renameDelYear': false,
+  'renameDelTmdbId': false,
+  'messageTemplate': '',
+  'ratioLimit': -2,
+  'seedingTimeLimit': -2,
+  'inactiveSeedingTimeLimit': -2,
+  'autoUpdate': false
 })
 
 const activeName = ref('download')
@@ -151,6 +184,7 @@ const editConfig = () => {
   api.post('api/config', my_config)
       .then(res => {
         ElMessage.success(res.message)
+        emit('load')
         dialogVisible.value = false
       })
       .finally(() => {
@@ -161,14 +195,6 @@ const editConfig = () => {
 defineExpose({
   show
 })
+const emit = defineEmits(['load'])
 
 </script>
-
-
-<style>
-@media (min-width: 900px) {
-  #menu > div {
-    display: inline-block;
-  }
-}
-</style>

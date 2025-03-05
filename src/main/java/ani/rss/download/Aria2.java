@@ -1,11 +1,16 @@
 package ani.rss.download;
 
 import ani.rss.entity.Config;
+import ani.rss.entity.Item;
 import ani.rss.entity.TorrentsInfo;
+import ani.rss.util.GsonStatic;
 import ani.rss.util.HttpReq;
+import ani.rss.util.RenameCacheUtil;
 import cn.hutool.core.codec.Base64;
+import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.io.resource.ResourceUtil;
+import cn.hutool.core.lang.Assert;
 import cn.hutool.core.text.StrFormatter;
 import cn.hutool.core.thread.ThreadUtil;
 import cn.hutool.core.util.StrUtil;
@@ -15,11 +20,12 @@ import com.google.gson.JsonObject;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * Aria2
+ */
 @Slf4j
 public class Aria2 implements BaseDownload {
     private Config config;
@@ -59,7 +65,8 @@ public class Aria2 implements BaseDownload {
         return HttpReq.post(host + "/jsonrpc", false)
                 .body(body)
                 .thenFunction(res -> {
-                    JsonObject jsonObject = gson.fromJson(res.body(), JsonObject.class);
+                    Assert.isTrue(res.isOk(), "status: {}", res.getStatus());
+                    JsonObject jsonObject = GsonStatic.fromJson(res.body(), JsonObject.class);
                     List<JsonElement> result = jsonObject.get("result").getAsJsonArray().asList();
                     List<TorrentsInfo> torrentsInfos = new ArrayList<>();
                     for (JsonElement jsonElement : result) {
@@ -91,12 +98,13 @@ public class Aria2 implements BaseDownload {
 
                         TorrentsInfo torrentsInfo = new TorrentsInfo();
                         torrentsInfo
+                                .setTags(List.of())
                                 .setId(gid)
                                 .setName(name)
                                 .setHash(infoHash)
                                 .setState(state)
-                                .setDownloadDir(dir)
-                                .setFiles(files);
+                                .setDownloadDir(FileUtil.getAbsolutePath(dir))
+                                .setFiles(() -> files);
                         torrentsInfos.add(torrentsInfo);
                     }
                     return torrentsInfos;
@@ -105,10 +113,11 @@ public class Aria2 implements BaseDownload {
 
 
     @Override
-    public Boolean download(String name, String savePath, File torrentFile, Boolean ova) {
+    public Boolean download(Item item, String savePath, File torrentFile, Boolean ova) {
+        String name = item.getReName();
         String host = config.getHost();
         String password = config.getPassword();
-        String body = "";
+        String body;
 
         String extName = FileUtil.extName(torrentFile);
         if (StrUtil.isBlank(extName)) {
@@ -116,8 +125,8 @@ public class Aria2 implements BaseDownload {
         }
 
         if ("txt".equals(extName)) {
-            body = ResourceUtil.readUtf8Str("aria2/aria2.addUri.json");
-            body = StrFormatter.format(body, password, FileUtil.readUtf8String(torrentFile), savePath);
+            log.error("Aria2 暂不支持磁力链接下载与重命名");
+            return false;
         } else {
             body = ResourceUtil.readUtf8Str("aria2/addTorrent.json");
             body = StrFormatter.format(body, password, Base64.encode(torrentFile), savePath);
@@ -125,26 +134,27 @@ public class Aria2 implements BaseDownload {
 
         String id = HttpReq.post(host + "/jsonrpc", false)
                 .body(body)
-                .thenFunction(res -> gson.fromJson(res.body(), JsonObject.class).get("result").getAsString());
+                .thenFunction(res -> GsonStatic.fromJson(res.body(), JsonObject.class).get("result").getAsString());
+
+        log.info("aria2 添加下载 => name: {} id: {}", name, id);
 
         Boolean watchErrorTorrent = config.getWatchErrorTorrent();
 
+        if (!ova) {
+            RenameCacheUtil.put(id, name);
+        }
+
         if (!watchErrorTorrent) {
-            if (!ova && !"txt".equals(extName)) {
-                renameCache.put(id, name);
-            }
+            ThreadUtil.sleep(1000 * 10);
             return true;
         }
 
-        for (int i = 0; i < 10; i++) {
-            ThreadUtil.sleep(2000);
+        for (int i = 0; i < 6; i++) {
+            ThreadUtil.sleep(1000 * 10);
             List<TorrentsInfo> torrentsInfos = getTorrentsInfos();
             for (TorrentsInfo torrentsInfo : torrentsInfos) {
                 if (!torrentsInfo.getId().equals(id)) {
                     continue;
-                }
-                if (!ova && "txt".equals(extName)) {
-                    renameCache.put(id, name);
                 }
                 return true;
             }
@@ -153,32 +163,64 @@ public class Aria2 implements BaseDownload {
     }
 
     @Override
-    public void delete(TorrentsInfo torrentsInfo) {
+    public Boolean delete(TorrentsInfo torrentsInfo, Boolean deleteFiles) {
         String host = config.getHost();
         String password = config.getPassword();
         String id = torrentsInfo.getId();
         String body = ResourceUtil.readUtf8Str("aria2/removeDownloadResult.json");
         body = StrFormatter.format(body, password, id);
 
-        HttpReq.post(host + "/jsonrpc", false)
-                .body(body)
-                .thenFunction(HttpResponse::isOk);
+        try {
+            return HttpReq.post(host + "/jsonrpc", false)
+                    .body(body)
+                    .thenFunction(HttpResponse::isOk);
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+            return false;
+        }
     }
 
     @Override
     public void rename(TorrentsInfo torrentsInfo) {
         String id = torrentsInfo.getId();
         String downloadDir = torrentsInfo.getDownloadDir();
-        String reName = renameCache.get(id);
-        if (StrUtil.isBlank(reName)) {
+        TorrentsInfo.State state = torrentsInfo.getState();
+
+        if (Objects.isNull(state)) {
             return;
         }
-        List<String> files = torrentsInfo.getFiles();
-        for (String file : files) {
-            File src = new File(file);
-            if (!src.exists()) {
-                continue;
-            }
+
+        // 仅支持下载完成后重命名
+        if (!state.name().equals(TorrentsInfo.State.pausedUP.name())) {
+            return;
+        }
+
+        String reName = RenameCacheUtil.get(id);
+        if (StrUtil.isBlank(reName)) {
+            log.debug("未获取到重命名 => id: {}", id);
+            return;
+        }
+
+        List<File> files = torrentsInfo.getFiles().get()
+                .stream()
+                .map(File::new)
+                .filter(File::exists)
+                .filter(file -> {
+                    String extName = FileUtil.extName(file);
+                    if (StrUtil.isBlank(extName)) {
+                        return false;
+                    }
+                    if (file.length() < 1) {
+                        return false;
+                    }
+                    return videoFormat.contains(extName) || subtitleFormat.contains(extName);
+                })
+                .sorted(Comparator.comparingLong(file -> Long.MAX_VALUE - file.length()))
+                .collect(Collectors.toList());
+
+        Assert.notEmpty(files);
+
+        for (File src : files) {
             String name = src.getName();
             String fileReName = getFileReName(name, reName);
             File newPath = new File(downloadDir + "/" + fileReName);
@@ -188,5 +230,35 @@ public class Aria2 implements BaseDownload {
             FileUtil.move(src, newPath, false);
             log.info("重命名 {} ==> {}", name, newPath);
         }
+        RenameCacheUtil.remove(id);
+    }
+
+    @Override
+    public Boolean addTags(TorrentsInfo torrentsInfo, String tags) {
+        return false;
+    }
+
+    @Override
+    public void updateTrackers(Set<String> trackers) {
+        String trackersStr = CollUtil.join(trackers, "\\n");
+        String host = config.getHost();
+        String password = config.getPassword();
+        String body = ResourceUtil.readUtf8Str("aria2/changeGlobalOption.json");
+        body = StrFormatter.format(body, password, trackersStr);
+
+        HttpReq.post(host + "/jsonrpc", false)
+                .body(body)
+                .then(res -> {
+                    if (res.isOk()) {
+                        log.info("Aria2 更新Trackers完成 共{}条", trackers.size());
+                        return;
+                    }
+                    log.error("Aria2 更新Trackers失败 {}", res.getStatus());
+                });
+    }
+
+    @Override
+    public void setSavePath(TorrentsInfo torrentsInfo, String path) {
+        // api 不支持
     }
 }

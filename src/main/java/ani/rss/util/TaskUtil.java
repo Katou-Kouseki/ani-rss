@@ -1,6 +1,7 @@
 package ani.rss.util;
 
 import ani.rss.task.BgmTask;
+import ani.rss.task.GcTask;
 import ani.rss.task.RenameTask;
 import ani.rss.task.RssTask;
 import cn.hutool.core.thread.ThreadUtil;
@@ -22,12 +23,11 @@ public class TaskUtil {
                 // 等待现有任务结束
                 while (thread.isAlive()) {
                     thread.interrupt();
-                    ThreadUtil.sleep(500);
+                    ThreadUtil.sleep(100);
                 }
                 thread.join();
             } catch (Exception e) {
-                log.error(e.getMessage());
-                log.debug(e.getMessage(), e);
+                log.error(e.getMessage(), e);
             }
         }
         THREADS.clear();
@@ -43,6 +43,7 @@ public class TaskUtil {
         THREADS.add(new RenameTask(LOOP));
         THREADS.add(new RssTask(LOOP));
         THREADS.add(new BgmTask(LOOP));
+        THREADS.add(new GcTask(LOOP));
         for (Thread thread : THREADS) {
             thread.start();
         }

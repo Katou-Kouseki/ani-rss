@@ -3,18 +3,19 @@
     plus()
     backRss[editIndex].url = args.url
     backRss[editIndex].label = args.group
-  }"/>
-  <el-dialog v-model="dialogVisible" title="备用订阅" center v-if="dialogVisible">
+    editIndex = -1
+  }" match="false"/>
+  <el-dialog v-model="dialogVisible" center title="备用订阅">
     <div style="display: flex;width: 100%;">
       <div>
         <el-button text bg icon="Plus" @click="plus" type="primary"/>
       </div>
       <div style="margin: 3px;"></div>
       <div>
-        <el-button @click="mikan?.show" text bg icon="VideoCamera"/>
+        <el-button @click="mikan?.show(ani.title)" text bg icon="VideoCamera"/>
       </div>
     </div>
-    <el-scrollbar>
+    <div>
       <el-table v-model:data="backRss" height="400px">
         <el-table-column label="字幕组" min-width="100px">
           <template #default="it">
@@ -32,8 +33,17 @@
               {{ backRss[it.$index].url }}
             </div>
             <div v-else>
-              <el-input v-model:model-value="backRss[it.$index].url" placeholder="https://xxx.xxx" type="textarea"/>
+              <el-input v-model:model-value="backRss[it.$index].url" placeholder="https://xxx.xxx" type="textarea"
+                        autosize/>
             </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="偏移" width="180px">
+          <template #default="it">
+            <div v-if="editIndex !== it.$index">
+              {{ backRss[it.$index].offset }}
+            </div>
+            <el-input-number v-model:model-value="backRss[it.$index].offset" v-else/>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="115">
@@ -51,7 +61,7 @@
           </template>
         </el-table-column>
       </el-table>
-    </el-scrollbar>
+    </div>
     <div style="display: flex;width: 100%;justify-content: end;margin-top: 10px">
       <el-button icon="Check" bg text @click="ok" :disabled="editIndex > -1">确定</el-button>
     </div>
@@ -79,7 +89,8 @@ let plus = () => {
   if (!backRss.value.length) {
     backRss.value.push({
       label: '未知字幕组',
-      url: ''
+      url: '',
+      offset: props.ani.offset
     })
     editIndex.value = backRss.value.length - 1
     return
@@ -87,7 +98,8 @@ let plus = () => {
   if (backRss.value[backRss.value.length - 1].url.trim()) {
     backRss.value.push({
       label: '备用RSS',
-      url: ''
+      url: '',
+      offset: props.ani.offset
     })
     editIndex.value = backRss.value.length - 1
   }

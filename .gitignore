@@ -3,6 +3,9 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 
+package-lock.json
+pnpm-lock.yaml
+
 ### IntelliJ IDEA ###
 .idea
 .idea/modules.xml
@@ -45,3 +48,6 @@ logs
 *.log
 /config
 .git
+
+java-17-openjdk-17.0.3.0.6-1.jre.win.x86_64.zip
+ani-rss-update.exe

@@ -1,5 +1,25 @@
 <template>
-  <el-dialog v-model="dialogVisible" title="Mikan" center v-if="dialogVisible">
+  <el-dialog v-model="matchDialogVisible" align-center center title="匹配" width="500">
+    <div>
+      <el-radio-group v-model="addAni.match">
+        <div v-for="match in matchList" style="margin-right: 12px;">
+          <el-radio :label="JSON.stringify(match)" :value="JSON.stringify(match)">
+            <el-tag v-if="match.length" v-for="item in match" style="margin-right: 4px;">{{ item }}</el-tag>
+            <el-tag v-else type="success">全部</el-tag>
+          </el-radio>
+        </div>
+      </el-radio-group>
+    </div>
+    <div style="display: flex;width: 100%;justify-content: end;">
+      <el-button icon="Check" @click="async ()=>{
+          emit('add', addAni)
+          dialogVisible = false
+          matchDialogVisible = false
+      }" text bg>确定
+      </el-button>
+    </div>
+  </el-dialog>
+  <el-dialog v-model="dialogVisible" center title="Mikan">
     <div style="min-height: 300px;">
       <div style="margin: 4px;">
         <div style="display: flex;justify-content: space-between;">
@@ -30,7 +50,7 @@
                 <el-collapse @change="collapseChange" accordion>
                   <el-collapse-item v-for="it in item.items" :name="it.url">
                     <template #title>
-                      <img :src="img(it)" height="40" width="40">
+                      <img :src="img(it)" height="40" width="40" @click.stop="open(it.url)">
                       <div style="margin-left: 5px;
                                          max-width: 70%;
                                          overflow: hidden;
@@ -38,6 +58,7 @@
                                          text-overflow: ellipsis;">
                         {{ it.title }}
                       </div>
+                      <el-badge value="已订阅" class="item" type="primary" v-if="it['exists']"/>
                     </template>
                     <div style="margin-left: 15px;min-height: 50px;" v-if="selectName === it.url"
                          v-loading="groupLoading">
@@ -52,11 +73,18 @@
                                 {{ group.label }}
                                 <el-text class="mx-1" size="small">{{ group['updateDay'] }}</el-text>
                               </div>
+                              <div v-if="showTag()">
+                                <el-tag v-for="tag in group['tags'].slice(0, 5)" style="margin-right: 4px;">{{
+                                    tag
+                                  }}
+                                </el-tag>
+                              </div>
                               <div style="display: flex;align-items: center;margin-right: 14px;margin-left: 4px;">
                                 <el-button text bg @click.stop="add({
                                   'title':it.title,
                                   'group':group.label,
-                                  'url':group['rss']
+                                  'url':group['rss'],
+                                  'matchList':group['matchList']
                                 })" icon="Plus">
                                   添加
                                 </el-button>
@@ -108,13 +136,22 @@ let data = ref({
 
 let season = ref('')
 
-let show = () => {
+let show = (name) => {
   season.value = ''
   dialogVisible.value = true
   text.value = ''
   data.value = {
     'seasons': [],
     'items': []
+  }
+  if (name) {
+    name = name.replace(/ ?\((19|20)\d{2}\)/g, "").trim()
+    name = name.replace(/ ?\[tmdbid=(\d+)]/g, "").trim()
+    if (name.length > 2) {
+      text.value = name
+      search()
+      return
+    }
   }
   list({})
 }
@@ -160,7 +197,6 @@ let list = async (body, text) => {
       })
       .finally(() => {
         loading.value = false
-        groups.value = {}
       });
 }
 
@@ -192,9 +228,31 @@ let collapseChange = (v) => {
       })
 }
 
+
+let matchDialogVisible = ref(false)
+
+let addAni = ref({
+  'url': '',
+  'match': ''
+})
+
+let matchList = ref([])
+
 let add = (v) => {
-  emit('add', v)
-  dialogVisible.value = false
+  matchList.value = JSON.parse(JSON.stringify(v.matchList))
+  let all = []
+  addAni.value.url = v.url
+  addAni.value.group = v.group
+  addAni.value.match = JSON.stringify(all)
+
+  if (matchList.value.length === 1 || props.match) {
+    dialogVisible.value = false
+    emit('add', addAni.value)
+    return
+  }
+
+  matchList.value.push(all)
+  matchDialogVisible.value = true
 }
 
 
@@ -202,9 +260,18 @@ let img = (it) => {
   return `api/file?img=${btoa(it['cover'])}&s=${window.authorization}`;
 }
 
+let showTag = () => {
+  return window.innerWidth > 900;
+}
+
+let open = (url) => {
+  window.open(url);
+}
+
 defineExpose({show})
 
-const emit = defineEmits(['add'])
+let props = defineProps(['match'])
+let emit = defineEmits(['add'])
 
 </script>
 

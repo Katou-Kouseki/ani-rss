@@ -14,6 +14,10 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 
+
+/**
+ * 根据rss解析为订阅
+ */
 @Slf4j
 @Auth
 @Path("/rss")
@@ -27,18 +31,19 @@ public class RssAction implements BaseAction {
         String url = ani.getUrl();
         String type = ani.getType();
         String title = ani.getTitle();
+        String bgmUrl = ani.getBgmUrl();
         Assert.notBlank(url, "RSS地址 不能为空");
         if (!ReUtil.contains("http(s*)://", url)) {
             url = "https://" + url;
         }
         url = URLUtil.decode(url, "utf-8");
         try {
-            Ani newAni = AniUtil.getAni(url, title, type);
+            title = title.replace("/", " ");
+            Ani newAni = AniUtil.getAni(url, title, type, bgmUrl);
             resultSuccess(newAni);
         } catch (Exception e) {
             String message = ExceptionUtil.getMessage(e);
-            log.error(message);
-            log.debug(message, e);
+            log.error(message, e);
             resultErrorMsg("RSS解析失败 {}", message);
         }
     }

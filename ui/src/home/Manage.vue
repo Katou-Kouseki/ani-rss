@@ -1,5 +1,6 @@
 <template>
-  <el-dialog v-model="dialogVisible" title="管理" center v-if="dialogVisible" class="manage-dialog">
+  <Del ref="refDel" @load="getList"/>
+  <el-dialog v-model="dialogVisible" center class="manage-dialog" title="管理">
     <div style="min-height: 300px;" v-loading="loading">
       <div style="display: flex;justify-content: space-between;width: 100%;">
         <div style="width: 120px">
@@ -11,31 +12,41 @@
           </el-select>
         </div>
         <div>
-          <popconfirm title="删除选中项?" @confirm="del">
-            <template #reference>
-              <el-button icon="Remove" bg text :disabled="!selectList.length" type="danger">删除
-              </el-button>
-            </template>
-          </popconfirm>
+          <el-button :disabled="!selectList.length" bg icon="Upload" text @click="exportData">
+            导出
+          </el-button>
+          <el-button :loading="importDataLoading" bg icon="Download" text @click="importData">
+            导入
+          </el-button>
+          <el-button icon="Remove" bg text :disabled="!selectList.length" type="danger"
+                     @click="refDel?.show(selectList)">删除
+          </el-button>
         </div>
       </div>
-      <el-scrollbar>
-        <el-table
-            @selection-change="handleSelectionChange"
-            v-model:data="searchList"
-            height="400px"
-        >
-          <el-table-column type="selection" width="55"/>
-          <el-table-column label="状态" width="80">
-            <template #default="it">
-              {{ searchList[it.$index].enable ? '已启用' : '未启用' }}
-            </template>
-          </el-table-column>
-          <el-table-column label="标题" prop="title" width="200"/>
-          <el-table-column label="季" prop="season" width="50"/>
-          <el-table-column label="URL" prop="url" width="600"/>
-        </el-table>
-      </el-scrollbar>
+      <el-table
+          @selection-change="handleSelectionChange"
+          v-model:data="searchList"
+          height="400px"
+          stripe
+      >
+        <el-table-column type="selection" width="55" fixed/>
+        <el-table-column label="状态" width="80">
+          <template #default="it">
+            <el-tag v-if="searchList[it.$index].enable">
+              已启用
+            </el-tag>
+            <el-tag v-else type="info">
+              未启用
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="标题" prop="title" width="200"/>
+        <el-table-column label="季" prop="season" width="50"/>
+        <el-table-column label="URL" prop="url" width="600"/>
+      </el-table>
+      <div>
+        <p style="margin: 6px;text-align: end;">共 {{ searchList.length }} 项</p>
+      </div>
     </div>
   </el-dialog>
 </template>
@@ -43,8 +54,10 @@
 
 import {ref} from "vue";
 import api from "../api.js";
-import Popconfirm from "../other/Popconfirm.vue";
 import {ElMessage} from "element-plus";
+import Del from "./Del.vue";
+
+let refDel = ref()
 
 let selectFilter = ref('全部')
 
@@ -75,6 +88,7 @@ let loading = ref(false)
 let show = () => {
   selectFilter.value = '全部'
   dialogVisible.value = true
+  selectList.value = []
   getList()
 }
 
@@ -98,19 +112,49 @@ let handleSelectionChange = (v) => {
   selectList.value = v
 }
 
-const delLoading = ref(false)
+let exportData = () => {
+  const textContent = JSON.stringify(selectList.value);
+  const blob = new Blob([textContent], {type: "text/plain"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.style.display = "none";
+  a.href = url;
+  a.download = "ani.json";
+  document.body.appendChild(a);
+  a.click();
+  URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+}
 
-const del = () => {
-  delLoading.value = true
-  api.del('api/ani', selectList.value.map(it => it['id']))
-      .then(res => {
-        ElMessage.success(res.message)
-        emit('load')
-        getList()
-      })
-      .finally(() => {
-        delLoading.value = false
-      })
+let importDataLoading = ref(false)
+
+let importData = () => {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.style.display = 'none';
+  document.body.appendChild(input);
+  input.addEventListener('change', async () => {
+    const file = input.files[0];
+    const reader = new FileReader();
+
+    reader.onload = function (e) {
+      const fileContent = e.target.result;
+      importDataLoading.value = true
+      api.post('api/ani/import', JSON.parse(fileContent.toString()))
+          .then(res => {
+            ElMessage.success(res.message)
+            emit('load')
+            getList()
+          })
+          .finally(() => {
+            importDataLoading.value = false
+          })
+      document.body.removeChild(input);
+    };
+    reader.readAsText(file);
+  });
+  input.click();
 }
 
 defineExpose({show})

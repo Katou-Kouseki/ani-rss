@@ -1,12 +1,13 @@
 <template>
-  <Items ref="items"/>
+  <Items ref="items" :ani="props.ani"/>
   <BackRss ref="backRss" :ani="props.ani"/>
   <Mikan ref="mikanRef" @add="args => {
     ani.subgroup = args.group
+    ani.match = JSON.parse(args.match).map(s => `{{${args.group}}}:${s}`)
     ani.url = args.url
   }"/>
   <div style="height: 500px;">
-    <el-scrollbar style="padding: 0 12px;" height="500px;" ref="scrollbar">
+    <el-scrollbar style="padding: 0 12px;" height="500" ref="scrollbar">
       <el-form label-width="auto"
                @submit="(event)=>{
                 event.preventDefault()
@@ -28,21 +29,30 @@
         </el-form-item>
         <el-form-item label="TMDB">
           <div style="display: flex;width: 100%;justify-content: space-between;">
-            <el-input v-model:model-value="props.ani.themoviedbName" disabled/>
+            <div class="el-input is-disabled">
+              <div class="el-input__wrapper" tabindex="-1"
+                   style="pointer-events: auto;cursor: auto;justify-content: left;">
+                <el-link v-if="props.ani?.tmdb?.id" type="primary"
+                         :href="`https://www.themoviedb.org/tv/${props.ani.tmdb.id}`" target="_blank">
+                  {{ props.ani.themoviedbName }}
+                </el-link>
+                <span v-else>{{ props.ani.themoviedbName }}</span>
+              </div>
+            </div>
             <div style="width: 4px;"></div>
             <el-button icon="Refresh" bg text @click="getThemoviedbName" :loading="getThemoviedbNameLoading"/>
           </div>
         </el-form-item>
-        <el-form-item label="bgmUrl">
-          <el-input v-model:model-value="ani.bgmUrl" placeholder="https://xxx.xxx"/>
+        <el-form-item label="BgmUrl">
+          <el-input v-model:model-value="props.ani.bgmUrl" placeholder="https://xxx.xxx"/>
         </el-form-item>
         <el-form-item label="主 RSS">
           <div style="width: 100%;display: flex;">
-            <el-input v-model:model-value="ani.subgroup" style="width: 140px" placeholder="字幕组"/>
+            <el-input v-model:model-value="props.ani.subgroup" style="width: 140px" placeholder="字幕组"/>
             <div style="width: 6px;"></div>
-            <el-input v-model:model-value="ani.url" placeholder="https://xxx.xxx"/>
+            <el-input v-model:model-value="props.ani.url" placeholder="https://xxx.xxx"/>
             <div style="width: 6px;"></div>
-            <el-button bg text @click="mikanRef?.show" icon="VideoCamera"/>
+            <el-button bg text @click="mikanRef?.show(props.ani.title)" icon="VideoCamera"/>
           </div>
         </el-form-item>
         <el-form-item label="备用 RSS">
@@ -102,19 +112,31 @@
             </div>
           </div>
         </el-form-item>
-        <el-form-item label="自定义下载">
+        <el-form-item label="自定义路径">
           <div style="width: 100%;">
             <div>
               <el-switch v-model:model-value="props.ani.customDownloadPath"/>
             </div>
             <div>
               <el-input type="textarea" style="width: 100%" :disabled="!props.ani.customDownloadPath"
+                        :autosize="{ minRows: 2}"
                         v-model:model-value="props.ani.downloadPath"/>
+            </div>
+            <div style="display: flex;justify-content: space-between;margin-top: 6px;">
+              <el-button :disabled="!props.ani.customDownloadPath" :loading="downloadPathLoading" bg icon="Refresh"
+                         text
+                         @click="downloadPath"/>
+              <el-text class="mx-1" size="small">
+                最终下载位置以 <strong>预览</strong> 为准
+              </el-text>
             </div>
           </div>
         </el-form-item>
         <el-form-item label="遗漏检测">
           <el-switch v-model:model-value="props.ani.omit"/>
+        </el-form-item>
+        <el-form-item label="只下载最新集">
+          <el-switch v-model:model-value="props.ani.downloadNew"/>
         </el-form-item>
         <el-form-item label="启用">
           <el-switch v-model:model-value="props.ani.enable"/>
@@ -132,8 +154,8 @@
       </popconfirm>
     </div>
     <div>
-      <el-button @click="items.show(ani)" bg text icon="Grid">预览</el-button>
-      <el-button icon="Check" :loading="okLoading" @click="async ()=>{
+      <el-button @click="items.show()" bg text icon="Grid">预览</el-button>
+      <el-button icon="Check" type="primary" :loading="okLoading" @click="async ()=>{
         okLoading = true
         emit('ok',()=>okLoading = false)
       }" text bg>确定
@@ -148,7 +170,7 @@ import Exclude from "../config/Exclude.vue";
 import Items from "./Items.vue";
 import {onMounted, ref} from "vue";
 import api from "../api.js";
-import {ElMessage} from "element-plus";
+import {ElMessage, ElText} from "element-plus";
 import Popconfirm from "../other/Popconfirm.vue";
 import BackRss from "./BackRss.vue";
 import Mikan from "./Mikan.vue";
@@ -169,10 +191,11 @@ let getThemoviedbName = () => {
   }
 
   getThemoviedbNameLoading.value = true
-  api.get("api/tmdb?method=getThemoviedbName&name=" + props.ani.title)
+  api.post('api/tmdb?method=getThemoviedbName', props.ani)
       .then(res => {
         ElMessage.success(res.message)
-        props.ani.themoviedbName = res.data
+        props.ani['themoviedbName'] = res.data['themoviedbName']
+        props.ani['tmdb'] = res.data['tmdb']
       })
       .finally(() => {
         getThemoviedbNameLoading.value = false
@@ -218,6 +241,20 @@ let download = () => {
       })
       .finally(() => {
         downloadLoading.value = false
+      })
+}
+
+let downloadPathLoading = ref(false)
+let downloadPath = () => {
+  downloadPathLoading.value = true
+  let newAni = JSON.parse(JSON.stringify(props.ani))
+  newAni.customDownloadPath = false
+  api.post('api/downloadPath', newAni)
+      .then(res => {
+        props.ani.downloadPath = res.data.downloadPath
+      })
+      .finally(() => {
+        downloadPathLoading.value = false
       })
 }
 

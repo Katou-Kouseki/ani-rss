@@ -7,20 +7,85 @@ import ani.rss.util.ConfigUtil;
 import ani.rss.util.ExceptionUtil;
 import ani.rss.util.TorrentUtil;
 import cn.hutool.core.thread.ThreadUtil;
-import cn.hutool.core.util.ObjectUtil;
 import lombok.extern.slf4j.Slf4j;
 
-import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
+/**
+ * RSS
+ */
 @Slf4j
 public class RssTask extends Thread {
+    public static final AtomicBoolean download = new AtomicBoolean(false);
+    private final AtomicBoolean loop;
+
     public RssTask(AtomicBoolean loop) {
         this.loop = loop;
     }
 
-    private final AtomicBoolean loop;
+    public static void download(AtomicBoolean loop) {
+        try {
+            if (!TorrentUtil.login()) {
+                return;
+            }
+            Set<String> ids = AniUtil.ANI_LIST
+                    .stream()
+                    .map(Ani::getId)
+                    .collect(Collectors.toSet());
+            for (String id : ids) {
+                if (!loop.get()) {
+                    return;
+                }
+                Optional<Ani> first = AniUtil.ANI_LIST
+                        .stream()
+                        .filter(it -> it.getId().equals(id))
+                        .findFirst();
+                if (first.isEmpty()) {
+                    continue;
+                }
+                Ani ani = first.get();
+
+                synchronized (AniUtil.ANI_LIST) {
+                    if (!AniUtil.ANI_LIST.contains(ani)) {
+                        continue;
+                    }
+                    String title = ani.getTitle();
+                    Boolean enable = ani.getEnable();
+                    if (!enable) {
+                        log.debug("{} 未启用", title);
+                        continue;
+                    }
+                    try {
+                        TorrentUtil.downloadAni(ani);
+                    } catch (Exception e) {
+                        String message = ExceptionUtil.getMessage(e);
+                        log.error("{} {}", title, message);
+                        log.error(message, e);
+                    }
+                }
+                // 避免短时间频繁请求导致流控
+                ThreadUtil.sleep(500);
+            }
+        } catch (Exception e) {
+            String message = ExceptionUtil.getMessage(e);
+            log.error(message, e);
+        } finally {
+            download.set(false);
+        }
+    }
+
+    public static void sync() {
+        synchronized (download) {
+            if (download.get()) {
+                throw new RuntimeException("存在未完成任务，请等待...");
+            }
+            download.set(true);
+        }
+    }
 
     @Override
     public void run() {
@@ -36,7 +101,7 @@ public class RssTask extends Thread {
             }
             try {
                 sync();
-                download();
+                download(loop);
             } catch (Exception e) {
                 String message = ExceptionUtil.getMessage(e);
                 log.error(message, e);
@@ -44,47 +109,5 @@ public class RssTask extends Thread {
             ThreadUtil.sleep(sleep, TimeUnit.MINUTES);
         }
         log.info("{} 任务已停止", getName());
-    }
-
-    public static final AtomicBoolean download = new AtomicBoolean(false);
-
-    public static void sync() {
-        synchronized (download) {
-            if (download.get()) {
-                throw new RuntimeException("存在未完成任务，请等待...");
-            }
-            download.set(true);
-        }
-    }
-
-    public static void download() {
-        try {
-            if (!TorrentUtil.login()) {
-                return;
-            }
-            List<Ani> aniList = ObjectUtil.clone(AniUtil.ANI_LIST);
-            for (Ani ani : aniList) {
-                String title = ani.getTitle();
-                Boolean enable = ani.getEnable();
-                if (!enable) {
-                    log.debug("{} 未启用", title);
-                    continue;
-                }
-                try {
-                    TorrentUtil.downloadAni(ani);
-                } catch (Exception e) {
-                    String message = ExceptionUtil.getMessage(e);
-                    log.error("{} {}", title, message);
-                    log.debug(message, e);
-                }
-                // 避免短时间频繁请求导致流控
-                ThreadUtil.sleep(500);
-            }
-        } catch (Exception e) {
-            String message = ExceptionUtil.getMessage(e);
-            log.error(message, e);
-        } finally {
-            download.set(false);
-        }
     }
 }

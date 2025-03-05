@@ -4,10 +4,9 @@ import ani.rss.entity.Ani;
 import ani.rss.entity.Config;
 import ani.rss.entity.Mikan;
 import ani.rss.entity.TorrentsInfo;
-import cn.hutool.core.util.ReflectUtil;
+import cn.hutool.core.util.ReUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.core.util.URLUtil;
-import cn.hutool.http.HttpConnection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -16,9 +15,9 @@ import org.jsoup.select.Elements;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
-
-import static ani.rss.util.AniUtil.saveJpg;
+import java.util.stream.Collectors;
 
 public class MikanUtil {
     public static String getMikanHost() {
@@ -31,10 +30,21 @@ public class MikanUtil {
         return mikanHost;
     }
 
+    /**
+     * 搜索mikan番剧列表
+     *
+     * @param text
+     * @param season
+     * @return
+     */
     public static Mikan list(String text, Mikan.Season season) {
+        Set<String> bangumiIdSet = AniUtil.ANI_LIST.stream()
+                .map(AniUtil::getBangumiId)
+                .filter(StrUtil::isNotBlank)
+                .collect(Collectors.toSet());
         String url = getMikanHost();
         if (StrUtil.isNotBlank(text)) {
-            url = url + "/Home/Search?searchstr=" + text;
+            url = url + "/Home/Search?searchstr=" + URLUtil.encodeBlank(text);
         } else {
             Integer year = season.getYear();
             String seasonStr = season.getSeason();
@@ -70,6 +80,9 @@ public class MikanUtil {
 
                     Function<Element, List<Ani>> get = (el) -> {
                         List<Ani> anis = new ArrayList<>();
+                        if (Objects.isNull(el)) {
+                            return anis;
+                        }
                         Elements lis = el.select("li");
                         for (Element li : lis) {
                             String img = getMikanHost() + li.selectFirst("span")
@@ -80,10 +93,15 @@ public class MikanUtil {
                             }
                             String href = getMikanHost() + aa.get(0).attr("href");
                             String title = aa.get(0).text();
+
+                            String id = ReUtil.get("\\d+(/)?$", href, 0);
+                            id = StrUtil.blankToDefault(id, "");
+
                             anis.add(new Ani()
                                     .setCover(img)
                                     .setTitle(title)
-                                    .setUrl(href));
+                                    .setUrl(href)
+                                    .setExists(bangumiIdSet.contains(id)));
                         }
                         return anis;
                     };
@@ -113,6 +131,12 @@ public class MikanUtil {
                 });
     }
 
+    /**
+     * 获取番剧字幕组
+     *
+     * @param url
+     * @return
+     */
     public static List<Mikan.Group> getGroups(String url) {
         return HttpReq.get(url, true)
                 .thenFunction(res -> {
@@ -157,19 +181,22 @@ public class MikanUtil {
     }
 
     public static void getMikanInfo(Ani ani, String subgroupId) {
-        String bangumiId = ani.getBangumiId();
+        String bangumiId = AniUtil.getBangumiId(ani);
+        if (StrUtil.isBlank(bangumiId)) {
+            return;
+        }
         HttpReq.get(URLUtil.getHost(URLUtil.url(getMikanHost())) + "/Home/Bangumi/" + bangumiId, true)
                 .then(res -> {
                     org.jsoup.nodes.Document html = Jsoup.parse(res.body());
 
-                    // 获取封面
-                    Elements elementsByClass = html.select(".bangumi-poster");
-                    Element element = elementsByClass.get(0);
-                    String style = element.attr("style");
-                    String image = style.replace("background-image: url('", "").replace("');", "");
-                    HttpConnection httpConnection = (HttpConnection) ReflectUtil.getFieldValue(res, "httpConnection");
-                    String saveJpg = saveJpg(URLUtil.getHost(httpConnection.getUrl()) + image);
-                    ani.setCover(saveJpg);
+                    Elements bangumiInfos = html.select(".bangumi-info");
+                    for (Element bangumiInfo : bangumiInfos) {
+                        String string = bangumiInfo.ownText();
+                        if (string.equals("Bangumi番组计划链接：")) {
+                            String bgmUrl = bangumiInfo.select("a").get(0).attr("href");
+                            ani.setBgmUrl(bgmUrl);
+                        }
+                    }
 
                     if (StrUtil.isBlank(subgroupId)) {
                         return;

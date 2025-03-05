@@ -1,25 +1,36 @@
 <template>
-  <Mikan ref="mikan" @add="args => ani.url = args.url"/>
-  <el-dialog v-model="dialogVisible" title="添加订阅" center v-if="dialogVisible">
-    <div v-if="showRss" @keydown.enter="getRss">
+  <Mikan ref="mikan" @add="args => {
+    ani.url = args.url
+    ani.match = JSON.parse(args.match).map(s => `{{${args.group}}}:${s}`)
+    getRss()
+  }"/>
+  <Bgm ref="bgmRef" @add="it => {
+    ani.title = it['name_cn']
+    ani.bgmUrl = it.url
+  }"/>
+  <el-dialog v-model="dialogVisible" center title="添加订阅">
+    <div v-show="showRss">
       <el-tabs tab-position="left" v-model="activeName">
         <el-tab-pane label="Mikan" name="mikan">
           <el-form label-width="auto"
-                   style="height: 200px"
-                   v-if="showRss" @keydown.enter="getRss"
+                   style="height: 260px"
                    @submit="(event)=>{
                 event.preventDefault()
              }">
             <el-form-item label="RSS 地址">
               <div style="width: 100%">
                 <el-input
+                    :disabled="rssButtonLoading"
                     type="textarea"
+                    :autosize="{ minRows: 2}"
                     v-model:model-value="ani.url"
                     placeholder="https://mikanani.me/RSS/Bangumi?bangumiId=xxx&subgroupid=xxx"
                 />
                 <br>
                 <div style="width: 100%;display: flex;justify-content: end;margin-top: 8px;">
-                  <el-button @click="mikan?.show" text bg icon="VideoCamera">Mikan</el-button>
+                  <el-button @click="mikan?.show()" text bg icon="VideoCamera" type="primary"
+                             :disabled="rssButtonLoading">Mikan
+                  </el-button>
                 </div>
                 <div>
                   <el-text class="mx-1" size="small">
@@ -32,63 +43,52 @@
             </el-form-item>
           </el-form>
         </el-tab-pane>
-        <el-tab-pane label="Nyaa" name="nyaa">
+        <el-tab-pane label="Other" name="other">
           <el-form label-width="auto"
                    style="height: 200px"
-                   v-if="showRss" @keydown.enter="getRss"
                    @submit="(event)=>{
                 event.preventDefault()
              }">
             <el-form-item label="番剧名称">
-              <el-input
-                  v-model:model-value="ani.title"
-                  placeholder="可以为空 如果获取失败建议补全"
-              />
-            </el-form-item>
-            <el-form-item label="RSS 地址">
-              <el-input
-                  type="textarea"
-                  v-model:model-value="ani.url"
-                  placeholder="https://nyaa.si/?page=rss&q=xxx"
-              />
-            </el-form-item>
-          </el-form>
-        </el-tab-pane>
-        <el-tab-pane label="Dmhy" name="dmhy">
-          <el-form label-width="auto"
-                   style="height: 200px"
-                   v-if="showRss" @keydown.enter="getRss"
-                   @submit="(event)=>{
-                event.preventDefault()
-             }">
-            <el-form-item label="番剧名称">
-              <el-input
-                  v-model:model-value="ani.title"
-                  placeholder="可以为空 如果获取失败建议补全"
-              />
-            </el-form-item>
-            <el-form-item label="RSS 地址">
-              <div style="width: 100%">
-                <el-input
-                    v-model:model-value="ani.url"
-                    type="textarea"
-                    placeholder="https://share.dmhy.org/topics/rss/rss.xml?keyword=xxx"
-                />
-                <div>
-                  <el-text class="mx-1" size="small">
-                    Dmhy 仅支持qb开启修改任务标题的情况下自动重命名与坏种检测
-                  </el-text>
+              <div style="display: flex;width: 100%;">
+                <div style="flex: 1">
+                  <el-input
+                      :disabled="rssButtonLoading"
+                      v-model:model-value="ani.title"
+                      placeholder="可以为空 如果获取失败建议补全"
+                  />
                 </div>
+                <div style="width: 4px;"></div>
+                <el-button text bg icon="Search" @click="bgmRef?.show(ani.title)" :disabled="rssButtonLoading"/>
               </div>
             </el-form-item>
+            <el-form-item label="BgmUrl">
+              <el-input
+                  v-model:model-value="ani.bgmUrl"
+                  placeholder="https://bgm.tv/subject/123456"
+                  :disabled="rssButtonLoading"
+              />
+            </el-form-item>
+            <el-form-item label="RSS 地址">
+              <el-input
+                  :disabled="rssButtonLoading"
+                  :autosize="{ minRows: 2}"
+                  type="textarea"
+                  v-model:model-value="ani.url"
+                  placeholder="https://xxxx.com/a.xml"
+              />
+            </el-form-item>
           </el-form>
+          <el-text class="mx-1" size="small">
+            dmhy等含有磁力链接的RSS不支持Aria2
+          </el-text>
         </el-tab-pane>
       </el-tabs>
       <div style="display: flex;justify-content: end;width: 100%;margin-top: 10px;">
         <el-button :loading="rssButtonLoading" @click="getRss" text bg icon="Check">确定</el-button>
       </div>
     </div>
-    <div v-else>
+    <div v-if="!showRss">
       <Ani v-model:ani="ani" @ok="addAni"/>
     </div>
   </el-dialog>
@@ -100,9 +100,11 @@ import {ElMessage} from "element-plus";
 import api from "../api.js";
 import Mikan from "./Mikan.vue";
 import Ani from "./Ani.vue";
+import Bgm from "./Bgm.vue";
 
 const showRss = ref(true)
 const mikan = ref()
+const bgmRef = ref()
 
 const dialogVisible = ref(false)
 
@@ -137,7 +139,9 @@ const getRss = () => {
   ani.value.type = activeName.value
   api.post('api/rss', ani.value)
       .then(res => {
+        let match = ani.value['match'];
         ani.value = res['data']
+        ani.value['match'] = match
         ani.value.showDownlaod = false
         showRss.value = false
       })
@@ -164,7 +168,8 @@ const show = () => {
     'offset': 0,
     'title': '',
     'exclude': [],
-    'totalEpisodeNumber': 0
+    'totalEpisodeNumber': 0,
+    'match': []
   }
   activeName.value = 'mikan'
   showRss.value = true

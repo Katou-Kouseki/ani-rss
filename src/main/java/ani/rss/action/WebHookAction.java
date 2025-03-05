@@ -3,9 +3,13 @@ package ani.rss.action;
 import ani.rss.annotation.Auth;
 import ani.rss.annotation.Path;
 import ani.rss.auth.enums.AuthType;
+import ani.rss.entity.Ani;
 import ani.rss.entity.Config;
+import ani.rss.enums.StringEnum;
+import ani.rss.util.AniUtil;
 import ani.rss.util.BgmUtil;
 import ani.rss.util.ConfigUtil;
+import ani.rss.util.TorrentUtil;
 import cn.hutool.core.convert.Convert;
 import cn.hutool.core.text.StrFormatter;
 import cn.hutool.core.thread.ExecutorBuilder;
@@ -17,12 +21,17 @@ import com.google.gson.JsonObject;
 import lombok.Synchronized;
 import lombok.extern.slf4j.Slf4j;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicReference;
 
+/**
+ * WebHook
+ */
 @Slf4j
 @Auth(type = AuthType.API_KEY)
 @Path("/web_hook")
@@ -31,7 +40,7 @@ public class WebHookAction implements BaseAction {
     private static final ExecutorService EXECUTOR = ExecutorBuilder.create()
             .setCorePoolSize(1)
             .setMaxPoolSize(1)
-            .setWorkQueue(new LinkedBlockingQueue<>(32))
+            .setWorkQueue(new LinkedBlockingQueue<>(256))
             .build();
 
     @Override
@@ -50,14 +59,15 @@ public class WebHookAction implements BaseAction {
         }
 
         JsonObject item = body.getAsJsonObject("Item");
+        String path = item.get("Path").getAsString();
+        String parent = new File(path).getParent();
         String seriesName = item.get("SeriesName").getAsString();
         String fileName = item.get("FileName").getAsString();
-        String regStr = "S(\\d+)E(\\d+(\\.5)?)";
-        if (!ReUtil.contains(regStr, fileName)) {
+        if (!ReUtil.contains(StringEnum.SEASON_REG, fileName)) {
             response.sendOk();
             return;
         }
-        int s = Integer.parseInt(ReUtil.get(regStr, fileName, 1));
+        int s = Integer.parseInt(ReUtil.get(StringEnum.SEASON_REG, fileName, 1));
 
         // 番外
         if (s < 1) {
@@ -66,7 +76,7 @@ public class WebHookAction implements BaseAction {
         }
 
         // x.5
-        double e = Double.parseDouble(ReUtil.get(regStr, fileName, 2));
+        double e = Double.parseDouble(ReUtil.get(StringEnum.SEASON_REG, fileName, 2));
         if ((int) e == e - 0.5) {
             response.sendOk();
             return;
@@ -79,20 +89,57 @@ public class WebHookAction implements BaseAction {
         AtomicReference<String> seriesNameAtomic = new AtomicReference<>(seriesName);
         EXECUTOR.execute(() -> {
             log.info("{} 标记为 [{}]", fileName, List.of("未看过", "想看", "看过").get(type));
-            String episodeId = "";
-            String subjectId = "";
+            String episodeId;
+            String subjectId;
+            List<Ani> anis = AniUtil.ANI_LIST;
 
-            // 往后查两季 如果没有则停止
-            for (int i = s; i <= s + 2; i++) {
-                if (i > 1) {
-                    seriesNameAtomic.set(StrFormatter.format("{} 第{}季", seriesName, Convert.numberToChinese(i, false)));
+            // 优先匹配路径相同的
+            Optional<String> first = anis.stream()
+                    .filter(ani -> {
+                        String bgmUrl = ani.getBgmUrl();
+                        if (StrUtil.isBlank(bgmUrl)) {
+                            return false;
+                        }
+                        List<File> downloadPath = TorrentUtil.getDownloadPath(ani);
+                        for (File file : downloadPath) {
+                            if (file.toString().equals(parent)) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    })
+                    .map(BgmUtil::getSubjectId)
+                    .findFirst();
+
+            if (first.isEmpty()) {
+                // 匹配名称相同的
+                first = anis.stream()
+                        .filter(ani -> {
+                            String bgmUrl = ani.getBgmUrl();
+                            if (StrUtil.isBlank(bgmUrl)) {
+                                return false;
+                            }
+                            String title = ani.getTitle();
+                            title = title.replaceAll(StringEnum.YEAR_REG, "")
+                                    .trim();
+                            Integer season = ani.getSeason();
+                            return title.equals(seriesName) && s == season;
+                        })
+                        .map(BgmUtil::getSubjectId)
+                        .findFirst();
+            }
+
+            if (first.isPresent()) {
+                subjectId = first.get();
+            } else {
+                if (s > 1) {
+                    seriesNameAtomic.set(StrFormatter.format("{} 第{}季", seriesName, Convert.numberToChinese(s, false)));
                 }
                 subjectId = BgmUtil.getSubjectId(seriesNameAtomic.get());
-                episodeId = BgmUtil.getEpisodeId(subjectId, e);
-                if (StrUtil.isNotBlank(episodeId)) {
-                    break;
-                }
             }
+
+            episodeId = BgmUtil.getEpisodeId(subjectId, e);
+
             if (StrUtil.isBlank(episodeId)) {
                 log.info("获取bgm对应剧集失败");
                 return;

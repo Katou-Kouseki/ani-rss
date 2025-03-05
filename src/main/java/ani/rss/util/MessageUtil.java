@@ -2,46 +2,69 @@ package ani.rss.util;
 
 import ani.rss.entity.Ani;
 import ani.rss.entity.Config;
-import ani.rss.msg.Mail;
+import ani.rss.enums.MessageEnum;
 import ani.rss.msg.Message;
-import ani.rss.msg.Telegram;
-import ani.rss.msg.WebHook;
+import cn.hutool.core.bean.DynaBean;
 import cn.hutool.core.thread.ExecutorBuilder;
+import cn.hutool.core.util.ClassUtil;
+import cn.hutool.core.util.ReflectUtil;
+import lombok.Synchronized;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 
 @Slf4j
 public class MessageUtil {
-    private static final ExecutorService EXECUTOR = ExecutorBuilder.create()
-            .setCorePoolSize(1)
-            .setMaxPoolSize(1)
-            .setWorkQueue(new LinkedBlockingQueue<>(12))
-            .build();
+    private static final Map<String, ExecutorService> SERVICE_MAP = new HashMap<>();
 
-    public static final Message mailMessage = new Mail();
-    public static final Message telegramMessage = new Telegram();
-    public static final Message webHookMessage = new WebHook();
+    @Synchronized("SERVICE_MAP")
+    public static synchronized void send(Config config, Ani ani, String text, MessageEnum messageEnum) {
+        List<MessageEnum> messageList = config.getMessageList();
+        if (Objects.nonNull(messageEnum)) {
+            if (messageList.stream().noneMatch(it -> it.name().equalsIgnoreCase(messageEnum.name()))) {
+                return;
+            }
+        }
 
-    public static synchronized void send(Config config, Ani ani, String text) {
-        try {
-            Boolean mail = config.getMail();
-            if (mail) {
-                EXECUTOR.execute(() -> mailMessage.send(config, ani, text));
+        Set<Class<?>> classes = ClassUtil.scanPackage("ani.rss.msg");
+        DynaBean dynaBean = DynaBean.create(config);
+        for (Class<?> aClass : classes) {
+            if (aClass.isInterface()) {
+                continue;
+            }
+            String name = aClass.getSimpleName();
+            name = name.substring(0, 1).toLowerCase() + name.substring(1);
+            Object b = dynaBean.get(name);
+            if (Objects.isNull(b)) {
+                continue;
+            }
+            if (!(b instanceof Boolean)) {
+                continue;
+            }
+            if (!(Boolean) b) {
+                continue;
             }
 
-            Boolean telegram = config.getTelegram();
-            if (telegram) {
-                EXECUTOR.execute(() -> telegramMessage.send(config, ani, text));
+            ExecutorService executor = SERVICE_MAP.get(name);
+            if (Objects.isNull(executor)) {
+                executor = ExecutorBuilder.create()
+                        .setCorePoolSize(1)
+                        .setMaxPoolSize(1)
+                        .setWorkQueue(new LinkedBlockingQueue<>(64))
+                        .build();
+                SERVICE_MAP.put(name, executor);
             }
 
-            Boolean webHook = config.getWebHook();
-            if (webHook) {
-                EXECUTOR.execute(() -> webHookMessage.send(config, ani, text));
-            }
-        } catch (Exception e) {
-            log.error(e.getMessage(), e);
+            Message message = (Message) ReflectUtil.newInstance(aClass);
+            executor.execute(() -> {
+                try {
+                    message.send(config, ani, text, messageEnum);
+                } catch (Exception e) {
+                    log.error(e.getMessage(), e);
+                }
+            });
         }
     }
 }

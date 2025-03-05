@@ -1,21 +1,34 @@
 package ani.rss.action;
 
 import ani.rss.entity.Result;
+import ani.rss.util.GsonStatic;
 import ani.rss.util.ServerUtil;
 import cn.hutool.core.io.IoUtil;
 import cn.hutool.core.text.StrFormatter;
 import cn.hutool.http.server.HttpServerResponse;
 import cn.hutool.http.server.action.Action;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Objects;
 
 public interface BaseAction extends Action {
-    Gson gson = new GsonBuilder()
-            .disableHtmlEscaping()
-            .create();
+
+    Logger logger = LoggerFactory.getLogger(BaseAction.class);
+
+    static <T> void staticResult(Result<T> result) {
+        HttpServerResponse httpServerResponse = ServerUtil.RESPONSE.get();
+        if (Objects.isNull(httpServerResponse)) {
+            logger.error("httpServerResponse is null");
+            return;
+        }
+        httpServerResponse.setContentType("application/json; charset=utf-8");
+        String json = GsonStatic.toJson(result);
+        IoUtil.writeUtf8(httpServerResponse.getOut(), true, json);
+    }
 
     default <T> T getBody(Class<T> tClass) {
-        return gson.fromJson(ServerUtil.REQUEST.get().getBody(), tClass);
+        return GsonStatic.fromJson(ServerUtil.REQUEST.get().getBody(), tClass);
     }
 
     default <T> void resultSuccess() {
@@ -44,13 +57,5 @@ public interface BaseAction extends Action {
 
     default <T> void result(Result<T> result) {
         staticResult(result);
-    }
-
-
-    static <T> void staticResult(Result<T> result) {
-        HttpServerResponse httpServerResponse = ServerUtil.RESPONSE.get();
-        httpServerResponse.setContentType("application/json; charset=utf-8");
-        String json = gson.toJson(result);
-        IoUtil.writeUtf8(httpServerResponse.getOut(), true, json);
     }
 }

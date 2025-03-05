@@ -5,11 +5,9 @@ import ani.rss.annotation.Path;
 import ani.rss.entity.Ani;
 import ani.rss.entity.Config;
 import ani.rss.entity.Item;
+import ani.rss.entity.TorrentsInfo;
 import ani.rss.task.RssTask;
-import ani.rss.util.AniUtil;
-import ani.rss.util.ConfigUtil;
-import ani.rss.util.ExceptionUtil;
-import ani.rss.util.TorrentUtil;
+import ani.rss.util.*;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.comparator.PinyinComparator;
@@ -18,6 +16,7 @@ import cn.hutool.core.date.DateUtil;
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.text.StrFormatter;
 import cn.hutool.core.thread.ThreadUtil;
+import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.extra.pinyin.PinyinUtil;
 import cn.hutool.http.server.HttpServerRequest;
 import cn.hutool.http.server.HttpServerResponse;
@@ -26,13 +25,13 @@ import com.google.gson.JsonElement;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
+/**
+ * 订阅 增删改查
+ */
 @Auth
 @Slf4j
 @Path("/ani")
@@ -48,7 +47,7 @@ public class AniAction implements BaseAction {
 
         if (Objects.isNull(ani)) {
             RssTask.sync();
-            ThreadUtil.execute(RssTask::download);
+            ThreadUtil.execute(() -> RssTask.download(new AtomicBoolean(true)));
             resultSuccessMsg("已开始刷新RSS");
             return;
         }
@@ -110,16 +109,21 @@ public class AniAction implements BaseAction {
             return;
         }
 
-        List<Item> items = AniUtil.getItems(ani);
-        ani.setCurrentEpisodeNumber((int) items.stream().filter(it -> !it.getReName().endsWith(".5")).count());
+        List<Item> items = ItemsUtil.getItems(ani);
+
+        int currentEpisodeNumber = ItemsUtil.currentEpisodeNumber(ani, items);
+        ani.setCurrentEpisodeNumber(currentEpisodeNumber);
 
         AniUtil.ANI_LIST.add(ani);
         AniUtil.sync();
-        ThreadUtil.execute(() -> {
-            if (TorrentUtil.login()) {
-                TorrentUtil.downloadAni(ani);
-            }
-        });
+        Boolean enable = ani.getEnable();
+        if (enable) {
+            ThreadUtil.execute(() -> {
+                if (TorrentUtil.login()) {
+                    TorrentUtil.downloadAni(ani);
+                }
+            });
+        }
         resultSuccessMsg("添加订阅成功");
         log.info("添加订阅 {} {} {}", ani.getTitle(), ani.getUrl(), ani.getId());
     }
@@ -148,7 +152,57 @@ public class AniAction implements BaseAction {
             resultErrorMsg("修改失败");
             return;
         }
+        HttpServerRequest request = ServerUtil.REQUEST.get();
+        String move = request.getParam("move");
+        if (Boolean.parseBoolean(move)) {
+            Ani get = first.get();
+            ThreadUtil.execute(() -> {
+                List<File> downloadPaths = TorrentUtil.getDownloadPath(get);
+                File newDownloadPath = TorrentUtil.getDownloadPath(ani).get(0);
+                Boolean login = TorrentUtil.login();
+                List<TorrentsInfo> torrentsInfos = new ArrayList<>();
+                if (login) {
+                    torrentsInfos = TorrentUtil.getTorrentsInfos();
+                }
+                for (File file : downloadPaths) {
+                    if (file.toString().equals(newDownloadPath.toString())) {
+                        // 位置未发生改变
+                        continue;
+                    }
+
+                    for (TorrentsInfo torrentsInfo : torrentsInfos) {
+                        if (!torrentsInfo.getDownloadDir().equals(file.toString())) {
+                            // 旧位置不相同
+                            continue;
+                        }
+                        // 修改保存位置
+                        TorrentUtil.setSavePath(torrentsInfo, newDownloadPath.toString());
+                    }
+                    if (!file.exists()) {
+                        continue;
+                    }
+                    if (file.isFile()) {
+                        continue;
+                    }
+                    ThreadUtil.sleep(3000);
+                    FileUtil.mkdir(newDownloadPath);
+                    File[] files = ObjectUtil.defaultIfNull(file.listFiles(), new File[]{});
+                    for (File oldFile : files) {
+                        log.info("移动文件 {} ==> {}", oldFile, newDownloadPath);
+                        FileUtil.move(oldFile, newDownloadPath, false);
+                    }
+                    FileUtil.del(file);
+                    ClearCacheAction.clearParentFile(file);
+                }
+
+            });
+        }
+        File torrentDir = TorrentUtil.getTorrentDir(first.get());
         BeanUtil.copyProperties(ani, first.get());
+        File newTorrentDir = TorrentUtil.getTorrentDir(first.get());
+        if (!torrentDir.toString().equals(newTorrentDir.toString())) {
+            FileUtil.move(torrentDir, newTorrentDir.getParentFile(), true);
+        }
         AniUtil.sync();
         resultSuccessMsg("修改成功");
         log.info("修改订阅 {} {} {}", ani.getTitle(), ani.getUrl(), ani.getId());
@@ -197,17 +251,59 @@ public class AniAction implements BaseAction {
                 .filter(it -> ids.contains(it.getId()))
                 .collect(Collectors.toList());
         if (anis.isEmpty()) {
-            resultErrorMsg("修改失败");
+            resultErrorMsg("删除失败");
             return;
         }
-        AniUtil.ANI_LIST.removeAll(anis);
+        for (Ani ani : anis) {
+            synchronized (AniUtil.ANI_LIST) {
+                AniUtil.ANI_LIST.remove(ani);
+            }
+        }
+
         AniUtil.sync();
         resultSuccessMsg("删除订阅成功");
-        for (Ani ani : anis) {
-            File torrentDir = TorrentUtil.getTorrentDir(ani);
-            FileUtil.del(torrentDir);
-            log.info("删除订阅 {} {} {}", ani.getTitle(), ani.getUrl(), ani.getId());
-        }
+        HttpServerRequest request = ServerUtil.REQUEST.get();
+        String deleteFiles = request.getParam("deleteFiles");
+        ThreadUtil.execute(() -> {
+            for (Ani ani : anis) {
+                File torrentDir = TorrentUtil.getTorrentDir(ani);
+                FileUtil.del(torrentDir);
+                ClearCacheAction.clearParentFile(torrentDir);
+                log.info("删除订阅 {} {} {}", ani.getTitle(), ani.getUrl(), ani.getId());
+            }
+            if (!Boolean.parseBoolean(deleteFiles)) {
+                // 不删除本地文件
+                return;
+            }
+
+            List<File> files = anis
+                    .stream()
+                    .map(TorrentUtil::getDownloadPath)
+                    .flatMap(List::stream)
+                    .collect(Collectors.toList());
+
+            Boolean login = TorrentUtil.login();
+            List<TorrentsInfo> torrentsInfos = new ArrayList<>();
+            if (login) {
+                torrentsInfos = TorrentUtil.getTorrentsInfos();
+            }
+            for (File file : files) {
+                List<TorrentsInfo> collect = torrentsInfos
+                        .stream()
+                        .filter(torrentsInfo -> torrentsInfo.getDownloadDir().equals(file.toString()))
+                        .collect(Collectors.toList());
+                for (TorrentsInfo torrentsInfo : collect) {
+                    TorrentUtil.delete(torrentsInfo, true, true);
+                }
+                if (!file.exists()) {
+                    continue;
+                }
+                ThreadUtil.sleep(3000);
+                log.info("删除 {}", file);
+                FileUtil.del(file);
+                ClearCacheAction.clearParentFile(file);
+            }
+        });
     }
 
     @Override

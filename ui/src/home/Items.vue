@@ -1,8 +1,8 @@
 <template class="items">
-  <el-dialog v-model="dialogVisible" title="预览" center v-if="dialogVisible" class="items-dialog">
+  <el-dialog v-model="dialogVisible" center class="items-dialog" title="预览">
     <div style="width: 100%;" v-loading="loading">
       <div style="margin: 4px 0;display: flex;">
-        <el-select v-model:model-value="select" style="max-width: 120px;">
+        <el-select v-model:model-value="select" style="max-width: 120px;" @change="selectChange">
           <el-option v-for="item in selectItems"
                      :key="item.label"
                      :label="item.label"
@@ -11,30 +11,60 @@
         <div style="width: 4px;"/>
         <el-input v-model:model-value="data.downloadPath" disabled></el-input>
       </div>
-      <el-scrollbar style="padding: 0 12px">
-        <el-table :data="data.items.filter(selectItems.filter(it => it.label === select)[0].fun)" height="500">
+      <div style="width: 100%;display: flex;justify-content: end;margin-top: 8px;">
+        <el-button bg text :disabled="!selectViews.length" @click="allowDownload" icon="Check" type="primary">允许下载
+        </el-button>
+        <el-button bg text :disabled="!selectViews.length" @click="notDownload" icon="Close">禁止下载</el-button>
+        <popconfirm @confirm="delTorrent" :title="`删除${selectViews.filter(it => it.local).length}个种子缓存?`">
+          <template #reference>
+            <el-button icon="Remove" bg text type="danger"
+                       :disabled="!selectViews.filter(it => it.local).length">
+              删除种子
+            </el-button>
+          </template>
+        </popconfirm>
+      </div>
+      <div style="padding: 0 12px">
+        <el-table :data="showItems" height="500"
+                  @selection-change="handleSelectionChange"
+                  scrollbar-always-on
+                  stripe>
+          <el-table-column type="selection" width="55" fixed/>
+          <el-table-column label="是否下载" min-width="100">
+            <template #default="it">
+              <el-tag v-if="props.ani['notDownload'].includes(showItems[it.$index]['episode'])" type="info">否</el-tag>
+              <el-tag v-else>是</el-tag>
+            </template>
+          </el-table-column>
           <el-table-column label="本地存在" min-width="100">
             <template #default="it">
-              {{ data.items[it.$index].local ? '是' : '否' }}
+              <el-tag v-if="!showItems[it.$index].local" type="info">否</el-tag>
+              <el-tag v-else>是</el-tag>
             </template>
           </el-table-column>
           <el-table-column label="主RSS" min-width="80">
             <template #default="it">
-              {{ data.items[it.$index]['master'] ? '是' : '否' }}
+              <el-tag v-if="!showItems[it.$index]['master']" type="info">否</el-tag>
+              <el-tag v-else>是</el-tag>
             </template>
           </el-table-column>
           <el-table-column prop="subgroup" label="字幕组" min-width="120"/>
           <el-table-column prop="title" label="标题" min-width="400"/>
           <el-table-column prop="reName" label="重命名" min-width="280"/>
+          <el-table-column prop="pubDate" label="发布时间" min-width="140"/>
           <el-table-column prop="infoHash" label="InfoHash" min-width="360"/>
           <el-table-column prop="size" label="大小" width="120"/>
           <el-table-column label="种子" width="90">
             <template #default="it">
-              <el-button bg text @click="copy(data.items[it.$index])">复制</el-button>
+              <el-button bg text @click="copy(showItems[it.$index])">复制</el-button>
             </template>
           </el-table-column>
         </el-table>
-      </el-scrollbar>
+        <div v-if="data['omitList'].length">
+          <el-alert :title="`缺少集数: ${data['omitList'].slice(0,10).join('、')}`" type="warning" show-icon
+                    :closable="false"/>
+        </div>
+      </div>
       <div style="margin: 4px 0;display: flex;justify-content: end;">
         <el-text class="mx-1" size="small">
           检测 <strong>本地是否存在</strong> 需要开启 <strong>文件已下载自动跳过</strong> 与 <strong>自动重命名</strong>
@@ -51,6 +81,12 @@
 import {ref} from "vue";
 import api from "../api.js";
 import {ElMessage, ElText} from "element-plus";
+import Popconfirm from "../other/Popconfirm.vue";
+
+let selectViews = ref([])
+let handleSelectionChange = (selectViewsValue) => {
+  selectViews.value = selectViewsValue
+}
 
 const select = ref('全部')
 const selectItems = ref([
@@ -70,7 +106,8 @@ const selectItems = ref([
 const dialogVisible = ref(false)
 const data = ref({
   'downloadPath': '',
-  'items': []
+  'items': [],
+  'omitList': []
 })
 const loading = ref(true)
 
@@ -84,22 +121,52 @@ let copy = (it) => {
   ElMessage.success('已复制')
 }
 
-let show = (ani) => {
+let show = () => {
   data.value.downloadPath = ''
   data.value.items = []
   select.value = '全部'
   dialogVisible.value = true
+  load()
+}
+
+let selectChange = () => {
+  showItems.value = data.value.items.filter(selectItems.value.filter(it => it.label === select.value)[0].fun)
+}
+
+let showItems = ref([])
+
+let load = () => {
   loading.value = true
-  api.post('api/items', ani)
+  api.post('api/items', props.ani)
       .then(res => {
         data.value = res.data
+        selectChange()
       })
       .finally(() => {
         loading.value = false
       })
 }
 
+let delTorrent = () => {
+  let infoHash = selectViews.value.filter(it => it['local']).map(it => it['infoHash']).join(",")
+  api.del(`api/torrent?id=${props.ani.id}&infoHash=${infoHash}`)
+      .then(res => {
+        ElMessage.success(res.message)
+        load()
+      })
+}
+
+let notDownload = () => {
+  props.ani['notDownload'].push(...selectViews.value.map(it => it['episode']))
+  props.ani['notDownload'] = Array.from(new Set(props.ani['notDownload']))
+}
+
+let allowDownload = () => {
+  props.ani['notDownload'] = props.ani['notDownload'].filter(episode => !selectViews.value.map(it => it['episode']).includes(episode))
+}
+
 defineExpose({show})
+let props = defineProps(['ani'])
 </script>
 
 <style>

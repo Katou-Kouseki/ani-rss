@@ -8,6 +8,25 @@
     <el-form-item label="密码">
       <el-input v-model:model-value="props.config.login.password"/>
     </el-form-item>
+    <el-form-item label="登录有效">
+      <el-input-number v-model:model-value="props.config.loginEffectiveHours" :min="1">
+        <template #suffix>
+          <span>小时</span>
+        </template>
+      </el-input-number>
+    </el-form-item>
+    <el-form-item label="IP校验">
+      <div>
+        <div>
+          <el-switch v-model:model-value="props.config.verifyLoginIp"/>
+        </div>
+        <div>
+          <el-text class="mx-1" size="small">
+            如果IP发生改变登录将失效
+          </el-text>
+        </div>
+      </div>
+    </el-form-item>
     <el-form-item label="IP白名单">
       <div style="width: 100%;">
         <div>
@@ -15,6 +34,7 @@
         </div>
         <div style="width: 100%;">
           <el-input style="width: 100%" type="textarea"
+                    :autosize="{ minRows: 2}"
                     :disabled="!config['ipWhitelist']"
                     :placeholder="'127.0.0.1\n192.168.1.0/24'" v-model:model-value="config['ipWhitelistStr']"/>
           <br>

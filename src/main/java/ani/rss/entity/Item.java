@@ -4,7 +4,11 @@ import lombok.Data;
 import lombok.experimental.Accessors;
 
 import java.io.Serializable;
+import java.util.Date;
 
+/**
+ * 下载项
+ */
 @Data
 @Accessors(chain = true)
 public class Item implements Serializable {
@@ -52,4 +56,9 @@ public class Item implements Serializable {
      * 字幕组
      */
     private String subgroup;
+
+    /**
+     * 发布时间
+     */
+    private Date pubDate;
 }

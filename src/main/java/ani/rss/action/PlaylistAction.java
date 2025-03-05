@@ -5,6 +5,7 @@ import ani.rss.annotation.Path;
 import ani.rss.download.BaseDownload;
 import ani.rss.entity.Ani;
 import ani.rss.entity.PlayItem;
+import ani.rss.enums.StringEnum;
 import ani.rss.util.AniUtil;
 import ani.rss.util.TorrentUtil;
 import cn.hutool.core.codec.Base64;
@@ -21,6 +22,9 @@ import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * 视频列表
+ */
 @Auth
 @Path("/playlist")
 public class PlaylistAction implements BaseAction {
@@ -42,11 +46,9 @@ public class PlaylistAction implements BaseAction {
         List<PlayItem> collect = downloadPath.stream()
                 .flatMap(file -> getPlayItem(file).stream()).collect(Collectors.toList());
         collect = CollUtil.distinct(collect, PlayItem::getTitle, false);
-        collect = CollUtil.sort(collect, Comparator.comparingDouble(it -> Double.parseDouble(ReUtil.get(s, it.getTitle(), 2))));
+        collect = CollUtil.sort(collect, Comparator.comparingDouble(it -> Double.parseDouble(ReUtil.get(StringEnum.SEASON_REG, it.getTitle(), 2))));
         resultSuccess(collect);
     }
-
-    private final String s = "S(\\d+)E(\\d+(\\.5)?)";
 
     public List<PlayItem> getPlayItem(File file) {
         List<PlayItem> playItems = new ArrayList<>();
@@ -63,7 +65,7 @@ public class PlaylistAction implements BaseAction {
         if (!BaseDownload.videoFormat.contains(extName)) {
             return playItems;
         }
-        if (!ReUtil.contains(s, file.getName())) {
+        if (!ReUtil.contains(StringEnum.SEASON_REG, file.getName())) {
             return playItems;
         }
         File[] files = ObjectUtil.defaultIfNull(file.getParentFile().listFiles(), new File[]{});
@@ -75,14 +77,14 @@ public class PlaylistAction implements BaseAction {
                     return new PlayItem.Subtitles()
                             .setName(name)
                             .setHtml(name.toUpperCase())
-                            .setUrl(Base64.encode(f.getAbsolutePath().replace("\\", "/")))
+                            .setUrl(Base64.encode(FileUtil.getAbsolutePath(f)))
                             .setType(FileUtil.extName(f));
                 }).collect(Collectors.toList());
         subtitles = CollUtil.distinct(subtitles, PlayItem.Subtitles::getName, true);
         PlayItem playItem = new PlayItem();
         playItem.setSubtitles(subtitles);
-        playItem.setFilename(Base64.encode(file.getAbsolutePath().replace("\\", "/")))
-                .setTitle(ReUtil.get(s, file.getName(), 0));
+        playItem.setFilename(Base64.encode(FileUtil.getAbsolutePath(file)))
+                .setTitle(ReUtil.get(StringEnum.SEASON_REG, file.getName(), 0));
         playItems.add(playItem);
         return playItems;
     }

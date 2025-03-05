@@ -1,6 +1,33 @@
 <template>
+  <el-dialog v-model="downloadPathDialogVisible" align-center center width="300"
+             @close="callback">
+    <div>
+      <el-text class="mx-1" size="default">
+        检测到修改后的下载位置发生了改动，是否将已下载文件移动到新的位置？
+      </el-text>
+      <br>
+      <br>
+      <el-text class="mx-1" size="small">
+        {{ downloadPath }}
+      </el-text>
+    </div>
+    <div style="width:100%;display: flex;justify-content: end;margin-top: 8px;">
+      <el-button icon="Check" text bg type="danger" @click="()=>{
+        move = true
+        editAni()
+        downloadPathDialogVisible = false
+      }">移动
+      </el-button>
+      <el-button icon="Close" bg text @click="()=>{
+        move = false
+        editAni()
+        downloadPathDialogVisible = false
+      }">不移动
+      </el-button>
+    </div>
+  </el-dialog>
   <el-dialog v-model="dialogVisible" title="修改订阅" center v-if="dialogVisible">
-    <Ani v-model:ani="ani" @ok="editAni"/>
+    <Ani v-model:ani="ani" @ok="editChange"/>
   </el-dialog>
 </template>
 
@@ -13,6 +40,7 @@ import Ani from "./Ani.vue";
 
 
 const dialogVisible = ref(false)
+const downloadPathDialogVisible = ref(false)
 
 const ani = ref({
   'url': '',
@@ -28,19 +56,36 @@ const ani = ref({
   'downloadPath': ''
 })
 
-const editAni = (fun) => {
-  api.put('api/ani', ani.value)
+let move = ref(false)
+let downloadPath = ref('')
+let callback = ref(() => {
+})
+
+const editChange = async (fun) => {
+  callback.value = fun
+  let req = await api.post('api/downloadPath', ani.value)
+  downloadPath.value = req.data.downloadPath
+  if (req.data.change) {
+    downloadPathDialogVisible.value = true
+    return
+  }
+  editAni()
+}
+
+const editAni = () => {
+  api.put('api/ani?move=' + move.value, ani.value)
       .then(res => {
         ElMessage.success(res.message)
         emit('load')
         dialogVisible.value = false
       })
-      .finally(fun);
+      .finally(callback.value);
 }
 
 const show = (item) => {
   ani.value = JSON.parse(JSON.stringify(item))
   ani.value.showDownlaod = true
+  move.value = false
   dialogVisible.value = true
 }
 

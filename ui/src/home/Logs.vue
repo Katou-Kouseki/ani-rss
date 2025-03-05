@@ -1,8 +1,8 @@
 <template>
-  <el-dialog v-model="dialogVisible" title="日志" center v-if="dialogVisible" @close="close" class="logs-dialog">
+  <el-dialog v-model="dialogVisible" center class="logs-dialog" title="日志" @close="close">
     <div style="width: 100%;justify-content: space-between;align-items: center;" class="auto">
       <el-checkbox-group v-model:model-value="selectLevels" @change="()=>getHtmlLogs()">
-        <el-checkbox v-for="item in levels" :label="item" size="large"/>
+        <el-checkbox v-for="item in levels" :key="item" :label="item" :value="item" size="large"/>
       </el-checkbox-group>
       <div style="display: flex;">
         <el-select
@@ -20,6 +20,8 @@
               :value="item"
           />
         </el-select>
+        <div style="width: 4px;"></div>
+        <el-button icon="Download" bg text @click="downloadLogs"/>
         <div style="width: 4px;"></div>
         <el-button icon="Refresh" bg text @click="getLogs" :loading="getLogsLoading"/>
         <div style="width: 4px;"></div>
@@ -99,6 +101,7 @@ const getLogs = () => {
   api.get('api/logs')
       .then(async res => {
         logs.value = res.data
+        loggerNames.value = []
         for (let datum of res.data) {
           if (loggerNames.value.indexOf(datum['loggerName']) > -1) {
             continue
@@ -113,12 +116,19 @@ const getLogs = () => {
       })
 }
 
+let downloadLogs = () => {
+  window.open(`api/downloadLogs?s=${authorization()}`)
+}
+
+let authorization = () => {
+  return window.authorization;
+}
+
 let close = () => {
   htmlLogs.value = ''
   loggerNames.value = []
   selectLoggerNames.value = []
 }
-
 
 defineExpose({show})
 </script>

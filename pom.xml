@@ -6,15 +6,20 @@
 
     <groupId>ani.rss</groupId>
     <artifactId>ani-rss</artifactId>
-    <version>1.1.75</version>
+    <version>1.1.311</version>
 
     <properties>
-        <maven.compiler.source>11</maven.compiler.source>
-        <maven.compiler.target>11</maven.compiler.target>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
     <dependencies>
+        <dependency>
+            <groupId>org.xerial</groupId>
+            <artifactId>sqlite-jdbc</artifactId>
+            <version>3.47.1.0</version>
+        </dependency>
         <dependency>
             <groupId>com.sun.mail</groupId>
             <artifactId>javax.mail</artifactId>
@@ -23,7 +28,7 @@
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <version>1.5.6</version>
+            <version>1.5.13</version>
         </dependency>
         <dependency>
             <groupId>io.github.biezhi</groupId>
@@ -107,7 +112,7 @@
                             <icon>ui/public/favicon.ico</icon>
                             <jre>
                                 <path>jre/bin;%JAVA_HOME%;%PATH%</path>
-                                <minVersion>11</minVersion>
+                                <minVersion>17</minVersion>
                             </jre>
                         </configuration>
                     </execution>
@@ -115,6 +120,5 @@
             </plugin>
         </plugins>
     </build>
-
 
 </project>

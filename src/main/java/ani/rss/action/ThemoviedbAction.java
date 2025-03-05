@@ -2,17 +2,20 @@ package ani.rss.action;
 
 import ani.rss.annotation.Auth;
 import ani.rss.annotation.Path;
+import ani.rss.entity.Ani;
 import ani.rss.entity.Result;
-import ani.rss.util.AniUtil;
-import cn.hutool.core.text.StrFormatter;
-import cn.hutool.core.util.ReUtil;
+import ani.rss.util.TmdbUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.http.HttpStatus;
 import cn.hutool.http.server.HttpServerRequest;
 import cn.hutool.http.server.HttpServerResponse;
 
 import java.io.IOException;
+import java.util.Map;
 
+/**
+ * TMDB
+ */
 @Auth
 @Path("/tmdb")
 public class ThemoviedbAction implements BaseAction {
@@ -20,16 +23,12 @@ public class ThemoviedbAction implements BaseAction {
     public void doAction(HttpServerRequest request, HttpServerResponse response) throws IOException {
         String s = request.getParam("method");
         if ("getThemoviedbName".equals(s)) {
-            String name = request.getParam("name");
-            String yearReg = " \\((\\d{4})\\)$";
-            String themoviedbName = AniUtil.getThemoviedbName(ReUtil.replaceAll(name, yearReg, ""));
-            if (ReUtil.contains(yearReg, name)) {
-                themoviedbName = StrFormatter.format("{} ({})", themoviedbName, ReUtil.get(yearReg, name, 1));
-            }
-            Result<String> result = new Result<String>()
+            Ani ani = getBody(Ani.class);
+            String themoviedbName = TmdbUtil.getName(ani);
+            Result<Ani> result = new Result<Ani>()
                     .setCode(HttpStatus.HTTP_OK)
                     .setMessage("获取TMDB成功")
-                    .setData(themoviedbName);
+                    .setData(ani.setThemoviedbName(themoviedbName));
             if (StrUtil.isBlank(themoviedbName)) {
                 result.setCode(HttpStatus.HTTP_INTERNAL_ERROR)
                         .setMessage("获取TMDB失败");

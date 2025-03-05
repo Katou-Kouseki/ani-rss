@@ -1,13 +1,18 @@
 package ani.rss.entity;
 
+import ani.rss.util.TmdbUtil;
 import cn.hutool.core.lang.UUID;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
+/**
+ * 订阅
+ */
 @Data
 @Accessors(chain = true)
 public class Ani implements Serializable {
@@ -20,6 +25,8 @@ public class Ani implements Serializable {
      * RSS URL
      */
     private String url;
+
+    private Boolean exists;
 
     /**
      * 备用rss
@@ -69,9 +76,14 @@ public class Ani implements Serializable {
     private Integer season;
 
     /**
-     * 封面
+     * 封面本地保存位置
      */
     private String cover;
+
+    /**
+     * 图片 https://
+     */
+    private String image;
 
     /**
      * 字幕组
@@ -94,7 +106,7 @@ public class Ani implements Serializable {
     private Boolean globalExclude;
 
     /**
-     * 剧场版
+     * 剧场版 or OVA
      */
     private Boolean ova;
 
@@ -121,8 +133,6 @@ public class Ani implements Serializable {
     private String themoviedbName;
 
     private String type;
-
-    private String bangumiId;
 
     private String bgmUrl;
 
@@ -161,6 +171,21 @@ public class Ani implements Serializable {
      */
     private Boolean omit;
 
+    /**
+     * 只下载最新集
+     */
+    private Boolean downloadNew;
+
+    /**
+     * 不进行下载的集
+     */
+    private List<Double> notDownload;
+
+    /**
+     * tmdb 相关信息
+     */
+    private TmdbUtil.Tmdb tmdb;
+
     public static Ani bulidAni() {
         Ani newAni = new Ani();
         return newAni
@@ -174,6 +199,7 @@ public class Ani implements Serializable {
                 .setEnable(true)
                 .setOva(false)
                 .setScore(0.0)
+                .setImage("")
                 .setThemoviedbName("")
                 .setCustomDownloadPath(false)
                 .setDownloadPath("")
@@ -181,19 +207,37 @@ public class Ani implements Serializable {
                 .setCurrentEpisodeNumber(0)
                 .setTotalEpisodeNumber(0)
                 .setMatch(List.of())
-                .setExclude(List.of("720", "\\d{1,2}-\\d{1,2}", "合集"))
+                .setExclude(List.of("720[Pp]", "\\d-\\d", "合集", "特别篇"))
                 .setBgmUrl("")
                 .setSubgroup("")
                 .setCustomEpisode(false)
-                .setCustomEpisodeStr("\\d{1,2}(\\.5)?")
+                .setCustomEpisodeStr("【\\d+(\\.5)?】|\\[\\d+(\\.5)?]|第\\d+(\\.5)?集| \\d+(\\.5)?")
                 .setCustomEpisodeGroupIndex(0)
-                .setOmit(true);
+                .setOmit(true)
+                .setDownloadNew(false)
+                .setNotDownload(new ArrayList<>())
+                .setTmdb(
+                        new TmdbUtil.Tmdb()
+                                .setId("")
+                                .setName("")
+                                .setDate(new Date())
+                );
     }
 
     @Data
     @Accessors(chain = true)
-    public static class BackRss {
+    public static class BackRss implements Serializable {
+        /**
+         * 字幕组
+         */
         private String label;
+        /**
+         * url
+         */
         private String url;
+        /**
+         * 剧集偏移
+         */
+        private Integer offset;
     }
 }

@@ -3,14 +3,13 @@ package ani.rss.util;
 import ani.rss.entity.Config;
 import ani.rss.entity.Login;
 import ani.rss.entity.MyMailAccount;
+import ani.rss.enums.MessageEnum;
+import ani.rss.enums.ServerChanTypeEnum;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.bean.copier.CopyOptions;
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.lang.Assert;
 import cn.hutool.core.lang.Validator;
-import cn.hutool.crypto.digest.MD5;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
@@ -26,30 +25,38 @@ public class ConfigUtil {
       默认配置
      */
     static {
-        String password = MD5.create().digestHex("admin");
+        String password = Md5Util.digestHex("admin");
         CONFIG.setSleep(15)
                 .setMikanHost("https://mikanime.tv")
-                .setRenameSleep(1)
+                .setRenameSleep(0.5)
+                .setGcSleep(10)
                 .setRename(true)
                 .setRss(true)
+                .setRssTimeout(20)
                 .setWatchErrorTorrent(true)
+                .setDelayedDownload(0)
                 .setFileExist(false)
+                .setAwaitStalledUP(true)
                 .setDelete(false)
+                .setDeleteBackRSSOnly(false)
                 .setOffset(false)
                 .setTitleYear(false)
                 .setAcronym(false)
                 .setQuarter(false)
                 .setAutoDisabled(false)
-                .setDownloadPath("")
-                .setOvaDownloadPath("")
+                .setDownloadPath(FileUtil.getAbsolutePath(new File("/Media/番剧")))
+                .setOvaDownloadPath(FileUtil.getAbsolutePath(new File("/Media/剧场版")))
                 .setHost("")
                 .setDownload("qBittorrent")
                 .setUsername("")
                 .setPassword("")
-                .setQbRenameTitle(true)
                 .setQbUseDownloadPath(false)
+                .setRatioLimit(-2)
+                .setSeedingTimeLimit(-2)
+                .setInactiveSeedingTimeLimit(-2)
                 .setSkip5(true)
                 .setBackRss(false)
+                .setLogsMax(2048)
                 .setDebug(false)
                 .setProxy(false)
                 .setProxyHost("")
@@ -59,6 +66,7 @@ public class ConfigUtil {
                 .setDownloadCount(0)
                 .setMail(false)
                 .setMailAddressee("")
+                .setMailImage(true)
                 .setMailAccount(
                         new MyMailAccount()
                                 .setHost("")
@@ -66,17 +74,27 @@ public class ConfigUtil {
                                 .setFrom("")
                                 .setPass("")
                                 .setSslEnable(false)
+                                .setStarttlsEnable(false)
                 )
-                .setLogin(new Login().setUsername("admin").setPassword(password))
-                .setExclude(List.of("720", "\\d{1,2}-\\d{1,2}", "合集"))
+                .setLogin(new Login()
+                        .setUsername("admin")
+                        .setPassword(password)
+                )
+                .setLoginEffectiveHours(3)
+                .setExclude(List.of("720[Pp]", "\\d-\\d", "合集", "特别篇"))
                 .setImportExclude(false)
                 .setEnabledExclude(false)
                 .setTelegram(false)
                 .setTelegramChatId("")
                 .setTelegramBotToken("")
                 .setTelegramApiHost("https://api.telegram.org")
+                .setTelegramImage(true)
+                .setTelegramFormat("")
                 .setWebHook(false)
                 .setTmdb(false)
+                .setBgmJpName(false)
+                .setTmdbId(false)
+                .setTmdbLanguage("zh-CN")
                 .setIpWhitelist(false)
                 .setIpWhitelistStr("")
                 .setWebHookBody("")
@@ -88,12 +106,37 @@ public class ConfigUtil {
                 .setBgmToken("")
                 .setApiKey("")
                 .setWeekShow(true)
-                .setScoreShow(false);
+                .setScoreShow(true)
+                .setDownloadNew(false)
+                .setInnerIP(false)
+                .setRenameTemplate("${title} S${seasonFormat}E${episodeFormat}")
+                .setRenameDelYear(false)
+                .setRenameDelTmdbId(false)
+                .setMessageList(List.of(
+                        MessageEnum.DOWNLOAD_START,
+                        MessageEnum.OMIT,
+                        MessageEnum.ERROR
+                ))
+                .setVerifyLoginIp(false)
+                .setServerChan(false)
+                .setServerChanType(ServerChanTypeEnum.SERVER_CHAN.getType())
+                .setServerChanSendKey("")
+                .setServerChan3ApiUrl("")
+                .setSystemMsg(false)
+                .setAutoTrackersUpdate(false)
+                .setTrackersUpdateUrls("https://cf.trackerslist.com/best.txt")
+                .setMessageTemplate("${text}")
+                .setAutoUpdate(false)
+                .setAlist(false)
+                .setAlistDelete(false)
+                .setAlistPath("/")
+                .setAlistHost("")
+                .setAlistToken("")
+                .setVersion("")
+                .setBgmImage("large")
+                .setCustomCss("")
+                .setCustomJs("");
     }
-
-    private static final Gson GSON = new GsonBuilder()
-            .disableHtmlEscaping()
-            .create();
 
     /**
      * 获取设置文件夹
@@ -123,10 +166,10 @@ public class ConfigUtil {
         File configFile = getConfigFile();
 
         if (!configFile.exists()) {
-            FileUtil.writeUtf8String(GSON.toJson(CONFIG), configFile);
+            FileUtil.writeUtf8String(GsonStatic.toJson(CONFIG), configFile);
         }
         String s = FileUtil.readUtf8String(configFile);
-        BeanUtil.copyProperties(GSON.fromJson(s, Config.class), CONFIG, CopyOptions
+        BeanUtil.copyProperties(GsonStatic.fromJson(s, Config.class), CONFIG, CopyOptions
                 .create()
                 .setIgnoreNullValue(true));
         LogUtil.loadLogback();
@@ -154,10 +197,12 @@ public class ConfigUtil {
         File configFile = getConfigFile();
         log.debug("保存配置 {}", configFile);
         try {
-            String json = GSON.toJson(CONFIG);
+            String json = GsonStatic.toJson(CONFIG);
             // 校验json没有问题
-            GSON.fromJson(json, Config.class);
-            FileUtil.writeUtf8String(json, configFile);
+            File temp = new File(configFile + ".temp");
+            FileUtil.del(temp);
+            FileUtil.writeUtf8String(json, temp);
+            FileUtil.rename(temp, configFile.getName(), true);
             LogUtil.loadLogback();
             log.debug("保存成功 {}", configFile);
         } catch (Exception e) {

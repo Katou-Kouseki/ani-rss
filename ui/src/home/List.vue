@@ -1,39 +1,46 @@
 <template>
-  <Edit ref="edit" @load="getList"/>
+  <Edit ref="refEdit" @load="getList"/>
   <PlayList ref="playList"/>
+  <Cover ref="refCover" @load="getList"/>
+  <Del ref="refDel" @load="getList"/>
   <div style="height: 100%;overflow: hidden;">
     <el-scrollbar>
       <div style="margin: 0 10px;min-height: 500px" v-loading="loading">
         <template v-for="weekItem in weekList">
           <div v-show="searchList(weekItem.i).length">
-            <h2 style="margin: 16px 0 8px 4px;" v-if="weekItem.label.length">
-              {{ weekItem.label }}
+            <h2 style="margin: 16px 0 8px 4px;" v-if="weekItem['label'].length">
+              {{ weekItem['label'] }}
             </h2>
             <div class="grid-container">
-              <div v-for="item in searchList(weekItem.i)" v-if="searchList(weekItem.i).length">
+              <div v-for="item in searchList(weekItem['i'])" v-if="searchList(weekItem['i']).length">
                 <el-card shadow="never">
                   <div style="display: flex;width: 100%;align-items: center;">
                     <div style="height: 100%;">
                       <img :src="`api/file?filename=${item['cover']}&s=${authorization()}`" height="130" width="92"
                            :alt="item.title"
-                           @click="openBgmUrl(item)"
-                           style="border-radius: 4px;cursor: pointer;">
+                           style="border-radius: 4px;cursor: pointer;"
+                           @click="refCover?.show(item)"/>
                     </div>
                     <div style="flex-grow: 1;position: relative;">
                       <div style="margin-left: 10px;">
-                        <div style="
-                          column-count: 1;
-                          overflow: hidden;
-                          white-space: nowrap;
-                          text-overflow: ellipsis;
-                          width: 200px;
-                          font-size: 0.97em;
-                          line-height: 1.6;
-                          font-weight: 500;
-                          hyphens: auto;
-                          letter-spacing: .0125em;">
-                          {{ item.title }}
-                        </div>
+                        <el-tooltip :content="item.title" placement="top">
+                          <div
+                              style="
+                              cursor: pointer;
+                              column-count: 1;
+                              overflow: hidden;
+                              white-space: nowrap;
+                              text-overflow: ellipsis;
+                              width: 200px;
+                              font-size: 0.97em;
+                              line-height: 1.6;
+                              font-weight: 500;
+                              hyphens: auto;
+                              letter-spacing: .0125em;"
+                              @click="openBgmUrl(item)">
+                            {{ item.title }}
+                          </div>
+                        </el-tooltip>
                         <div style="margin-bottom: 8px;" v-if="scoreShow">
                           <h4 style="color: #E800A4;">
                             {{ item['score'].toFixed(1) }}
@@ -64,7 +71,7 @@
                         display: grid;
                         grid-gap: 4px;
                         "
-                             :class="itemsPerRow > 1 ? 'gtc3' : 'gtc2'"
+                             :class="isNotMobile() ? 'gtc3' : 'gtc2'"
                         >
                           <el-tag>
                             第 {{ item.season }} 季
@@ -72,10 +79,10 @@
                           <el-tag type="success" v-if="item.enable">
                             已启用
                           </el-tag>
-                          <el-tag type="success" v-else>
+                          <el-tag type="info" v-else>
                             未启用
                           </el-tag>
-                          <el-tag type="info" v-if="itemsPerRow > 1">
+                          <el-tag type="info" v-if="isNotMobile()">
                             {{ item['subgroup'] ? item['subgroup'] : '未知' }}
                           </el-tag>
                           <el-tag type="info" v-else>
@@ -91,6 +98,9 @@
                           <el-tag type="danger" v-else>
                             tv
                           </el-tag>
+                          <el-tag v-if="item.backRssList.length > 0">
+                            备用RSS
+                          </el-tag>
                         </div>
                       </div>
                       <div
@@ -101,21 +111,17 @@
                           </el-icon>
                         </el-button>
                         <div style="height: 5px;" v-if="showPlaylist"></div>
-                        <el-button text @click="edit?.show(item)" bg>
+                        <el-button bg text @click="refEdit?.show(item)">
                           <el-icon>
                             <EditIcon/>
                           </el-icon>
                         </el-button>
                         <div style="height: 5px;"></div>
-                        <popconfirm title="你确定要删除吗?" @confirm="delAni(item)">
-                          <template #reference>
-                            <el-button type="danger" text :loading="item['deleteLoading']" bg>
-                              <el-icon>
-                                <Delete/>
-                              </el-icon>
-                            </el-button>
-                          </template>
-                        </popconfirm>
+                        <el-button type="danger" text @click="refDel?.show([item])" bg>
+                          <el-icon>
+                            <Delete/>
+                          </el-icon>
+                        </el-button>
                       </div>
                     </div>
                   </div>
@@ -127,7 +133,7 @@
         <div style="height: 80px;"></div>
       </div>
     </el-scrollbar>
-    <el-affix position="bottom">
+    <el-affix position="bottom" :style="`width: ${width}px`">
       <div style="width: 100%;
                                                       background: linear-gradient(to bottom,rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.01) );
                                                       backdrop-filter: blur(2px);padding-top: 10px;z-index: 99999"
@@ -140,7 +146,7 @@
                   <el-icon :class="elIconClass()">
                     <Back/>
                   </el-icon>
-                  <template v-if="itemsPerRow > 1">
+                  <template v-if="isNotMobile()">
                     退出登录
                   </template>
                 </el-button>
@@ -161,9 +167,11 @@ import Edit from "./Edit.vue";
 import api from "../api.js";
 import Popconfirm from "../other/Popconfirm.vue";
 import PlayList from "../play/PlayList.vue";
+import Cover from "./Cover.vue";
+import Del from "./Del.vue";
+import {useWindowSize} from "@vueuse/core";
 
-
-const weekList = ref([
+const defaultWeekList = [
   {
     i: 1,
     label: '星期日'
@@ -191,16 +199,19 @@ const weekList = ref([
   {
     i: 7,
     label: '星期六'
-  }]
-)
+  }
+]
+const weekList = ref(defaultWeekList)
 
 const pagerCount = ref(10)
-const edit = ref()
+const refEdit = ref()
+const refDel = ref()
 const pageSize = ref(40)
 const loading = ref(true)
 const playList = ref()
 const scoreShow = ref(false)
 const showPlaylist = ref(false)
+const refCover = ref()
 
 const searchList = (week) => {
   const text = props.title.trim()
@@ -246,19 +257,20 @@ const getList = () => {
         showPlaylist.value = res.data.showPlaylist
         weekShow.value = res.data.weekShow
         scoreShow.value = res.data.scoreShow
-        if (!weekShow.value) {
-          weekList.value = [{
-            i: 1,
-            label: ''
-          }]
+        if (weekShow.value) {
+          weekList.value = defaultWeekList;
+          let day = new Date().getDay()
+          weekList.value = weekList.value.slice(day, weekList.value.length).concat(weekList.value.slice(0, day))
+        } else {
+          weekList.value = [{i: 1, label: ''}];
         }
         api.get('api/ani')
             .then(res => {
               list.value = res.data
+              updateGridLayout()
             })
             .finally(() => {
               loading.value = false
-              updateGridLayout()
             })
       })
 }
@@ -267,25 +279,16 @@ let authorization = () => {
   return window.authorization;
 }
 
-const itemsPerRow = ref(1)
 
 let updateGridLayout = () => {
   const gridContainer = document.querySelectorAll('.grid-container');
   if (!gridContainer.length) {
     return
   }
-  const windowWidth = window.innerWidth;
-  if (windowWidth) {
-    document.querySelector('.el-affix').style['width'] = windowWidth + 'px'
-  }
-  itemsPerRow.value = Math.max(1, Math.floor(windowWidth / 400));
+  let itemsPerRow = Math.max(1, Math.floor(width.value / 400));
 
   for (let gridContainerElement of gridContainer) {
-    gridContainerElement.style.gridTemplateColumns = `repeat(${itemsPerRow.value}, 1fr)`;
-  }
-
-  if (itemsPerRow.value === 1) {
-    pagerCount.value = 4
+    gridContainerElement.style.gridTemplateColumns = `repeat(${itemsPerRow}, 1fr)`;
   }
 }
 
@@ -296,9 +299,6 @@ onMounted(() => {
   }
   window.addEventListener('resize', updateGridLayout);
   getList()
-
-  let day = new Date().getDay()
-  weekList.value = weekList.value.slice(day, weekList.value.length).concat(weekList.value.slice(0, day))
 })
 
 let logout = () => {
@@ -307,7 +307,7 @@ let logout = () => {
 }
 
 let elIconClass = () => {
-  return itemsPerRow.value > 1 ? 'el-icon--left' : '';
+  return isNotMobile() ? 'el-icon--left' : '';
 }
 
 let yearMonth = () => {
@@ -320,20 +320,35 @@ let openBgmUrl = (it) => {
     return
   }
   if (it.title.length) {
-    let title = it.title.replace(/\(\d{4}\)$/g, "").trim()
+    let title = it.title.replace(/ ?\((19|20)\d{2}\)/g, "").trim()
+    title = title.replace(/ ?\[tmdbid=(\d+)]/g, "").trim()
     window.open(`https://bgm.tv/subject_search/${title}?cat=2`)
   }
 }
+
+let isNotMobile = () => {
+  return width.value > 800;
+}
+
+const {width, height} = useWindowSize()
 
 defineExpose({
   getList, yearMonth
 })
 
-let props = defineProps(['title', 'filter'])
+let props = defineProps({
+  currentPage: {
+    type: Number,
+    default: 1
+  },
+  title: String,
+  filter: Function
+})
 
 </script>
 
 <style>
+
 .gtc3 {
   grid-template-columns: repeat(3, 1fr);
 }

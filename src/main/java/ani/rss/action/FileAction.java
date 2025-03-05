@@ -21,12 +21,37 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.io.*;
 import java.net.URI;
+import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
 import java.util.function.Consumer;
 
+/**
+ * 文件
+ */
 @Slf4j
 @Auth(type = AuthType.FORM)
 @Path("/file")
 public class FileAction implements BaseAction {
+
+    public static void getImg(String url, Consumer<InputStream> consumer) {
+        URI host = URLUtil.getHost(URLUtil.url(url));
+        HttpReq.get(url, true)
+                .then(res -> {
+                    HttpConnection httpConnection = (HttpConnection) ReflectUtil.getFieldValue(res, "httpConnection");
+                    URI host1 = URLUtil.getHost(httpConnection.getUrl());
+                    if (host.toString().equals(host1.toString())) {
+                        try {
+                            @Cleanup
+                            InputStream inputStream = res.bodyStream();
+                            consumer.accept(inputStream);
+                        } catch (Exception ignored) {
+                        }
+                        return;
+                    }
+                    String newUrl = url.replace(host.toString(), host1.toString());
+                    getImg(newUrl, consumer);
+                });
+    }
 
     @Override
     public void doAction(HttpServerRequest request, HttpServerResponse response) throws IOException {
@@ -68,6 +93,10 @@ public class FileAction implements BaseAction {
 
         String filename = request.getParam("filename");
         String s = request.getParam("config");
+
+        boolean hasRange = false;
+        long start = 0;
+
         if (StrUtil.isBlank(filename)) {
             response.send404("404 Not Found !");
             return;
@@ -86,7 +115,18 @@ public class FileAction implements BaseAction {
             response.setHeader("Content-Type", "video/" + extName);
             response.setHeader("Content-Disposition", "inline;filename=1." + extName);
             response.setHeader("Accept-Ranges", "bytes");
-            response.setHeader("Content-Length", String.valueOf(new File(filename).length()));
+            String rangeHeader = request.getHeader("Range");
+            long fileLength = new File(filename).length();
+            if (StrUtil.isNotBlank(rangeHeader) && rangeHeader.startsWith("bytes=")) {
+                String[] range = rangeHeader.substring(6).split("-");
+                start = Long.parseLong(range[0]);
+                long contentLength = fileLength - start;
+                response.setHeader("Content-Range", "bytes " + start + "-" + (fileLength - 1) + "/" + fileLength);
+                response.setHeader("Content-Length", String.valueOf(contentLength));
+                hasRange = true;
+            } else {
+                response.setHeader("Content-Length", String.valueOf(fileLength));
+            }
         } else {
             response.setContentType(mimeType);
             response.setHeader("Content-Disposition", "inline; filename=\"" + new File(filename).getName() + "\"");
@@ -100,35 +140,28 @@ public class FileAction implements BaseAction {
                 File configDir = ConfigUtil.getConfigDir();
                 file = new File(configDir + "/files/" + filename);
             }
-            @Cleanup
-            OutputStream out = response.getOut();
-            @Cleanup
-            InputStream inputStream = FileUtil.getInputStream(file);
-            IoUtil.copy(inputStream, out, 40960);
+            if (hasRange) {
+                response.send(206);
+                @Cleanup
+                OutputStream out = response.getOut();
+                @Cleanup
+                RandomAccessFile randomAccessFile = new RandomAccessFile(file, "r");
+                randomAccessFile.seek(start);
+                FileChannel channel = randomAccessFile.getChannel();
+                @Cleanup
+                InputStream inputStream = Channels.newInputStream(channel);
+                IoUtil.copy(inputStream, out, 40960);
+            } else {
+                @Cleanup
+                OutputStream out = response.getOut();
+                @Cleanup
+                InputStream inputStream = FileUtil.getInputStream(file);
+                IoUtil.copy(inputStream, out, 40960);
+            }
         } catch (Exception e) {
             String message = ExceptionUtil.getMessage(e);
             log.debug(message, e);
         }
-    }
-
-    public static void getImg(String url, Consumer<InputStream> consumer) {
-        URI host = URLUtil.getHost(URLUtil.url(url));
-        HttpReq.get(url, true)
-                .then(res -> {
-                    HttpConnection httpConnection = (HttpConnection) ReflectUtil.getFieldValue(res, "httpConnection");
-                    URI host1 = URLUtil.getHost(httpConnection.getUrl());
-                    if (host.toString().equals(host1.toString())) {
-                        try {
-                            @Cleanup
-                            InputStream inputStream = res.bodyStream();
-                            consumer.accept(inputStream);
-                        } catch (Exception ignored) {
-                        }
-                        return;
-                    }
-                    String newUrl = url.replace(host.toString(), host1.toString());
-                    getImg(newUrl, consumer);
-                });
     }
 
 }

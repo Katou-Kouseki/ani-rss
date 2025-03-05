@@ -1,3 +1,8 @@
+html.dark {
+    /* 自定义深色背景颜色 */
+    --el-bg-color: #2D2E2F;
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -11,6 +16,7 @@ html, body, #app {
 @media (max-width: 450px) {
     .el-dialog {
         --el-dialog-width: 100%;
+        margin-top: 55px;
     }
 }
 
@@ -48,7 +54,12 @@ html, body, #app {
     }
 }
 
-.el-card__body{
+.el-card__body {
     height: 100%;
-    box-sizing:border-box;
+    box-sizing: border-box;
 }
+
+.el-tag {
+    border-width: 0
+}
+

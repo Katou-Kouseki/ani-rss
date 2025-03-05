@@ -15,6 +15,9 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 
+/**
+ * 登录
+ */
 @Slf4j
 @Auth(value = false)
 @Path("/login")
@@ -37,7 +40,12 @@ public class LoginAction implements BaseAction {
 
         // 一个令牌只能用于一个ip
         String ip = AuthUtil.getIp();
-        myLogin.setIp(ip);
+        if (config.getVerifyLoginIp()) {
+            myLogin.setIp(ip);
+        } else {
+            myLogin.setIp("");
+        }
+
 
         if (username.equals(myUsername) && password.equals(myPassword)) {
             AuthUtil.resetKey();

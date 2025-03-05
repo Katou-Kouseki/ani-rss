@@ -1,7 +1,7 @@
 package ani.rss.util;
 
+import ani.rss.Main;
 import cn.hutool.core.io.resource.ResourceUtil;
-import cn.hutool.core.util.ObjectUtil;
 import lombok.extern.slf4j.Slf4j;
 
 import javax.swing.*;
@@ -10,14 +10,15 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.geom.AffineTransform;
 import java.net.URL;
-import java.util.Arrays;
 
 @Slf4j
 public class MenuUtil {
-    public static void start(String[] args) {
-        args = ObjectUtil.defaultIfNull(args, new String[]{});
+
+    public static TrayIcon trayIcon;
+
+    public static void start() {
         // 仅在添加--gui参数时启动托盘
-        if (Arrays.asList(args).contains("--gui")) {
+        if (Main.ARGS.contains("--gui")) {
             try {
                 showSystemTray();
                 log.info("启动系统托盘已启动");
@@ -50,12 +51,12 @@ public class MenuUtil {
 
 
         SystemTray tray = SystemTray.getSystemTray();
-        TrayIcon trayIcon = new TrayIcon(Toolkit.getDefaultToolkit().getImage(ResourceUtil.getResource("icon" + ".png"
-        )), "ani-rss");
+        trayIcon = new TrayIcon(
+                Toolkit.getDefaultToolkit().getImage(
+                        ResourceUtil.getResource("image/icon-64.png")
+                ), "ani-rss");
         trayIcon.setImageAutoSize(true);
-        trayIcon.displayMessage("ani-rss", "启动成功", TrayIcon.MessageType.INFO);
         tray.add(trayIcon);
-
         // 使用JDialog 作为JPopupMenu载体
         JDialog jDialog = new JDialog();
         // 关闭JDialog的装饰器

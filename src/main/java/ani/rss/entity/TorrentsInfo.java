@@ -5,7 +5,11 @@ import lombok.experimental.Accessors;
 
 import java.io.Serializable;
 import java.util.List;
+import java.util.function.Supplier;
 
+/**
+ * 种子信息
+ */
 @Data
 @Accessors(chain = true)
 public class TorrentsInfo implements Serializable {
@@ -29,7 +33,7 @@ public class TorrentsInfo implements Serializable {
     /**
      * 标签
      */
-    private String tags;
+    private List<String> tags;
 
     /**
      * 大小
@@ -49,7 +53,7 @@ public class TorrentsInfo implements Serializable {
     /**
      * 文件列表
      */
-    private List<String> files;
+    private Supplier<List<String>> files;
 
     public enum State {
         /**
@@ -93,9 +97,14 @@ public class TorrentsInfo implements Serializable {
          */
         uploading,
         /**
+         * 排队中(上传)
+         */
+        queuedUP,
+        /**
          * 已完成
          */
         pausedUP,
+        stoppedUP,
         /**
          * [F]元数据
          */
